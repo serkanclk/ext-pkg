@@ -98,27 +98,33 @@ class ConnectionManager {
             }
         });
         panel.setSaveHandler(async (p, pwd, connectAfterSave) => {
-            const profiles = this.getProfiles();
-            const existingIdx = profiles.findIndex(existing => existing.name === p.name);
-            if (existingIdx >= 0) {
-                if (!profileName || profileName !== p.name) {
-                    // It's a "create" but name already exists, or rename to existing
-                    vscode.window.showErrorMessage(`Connection named "${p.name}" already exists.`);
-                    return;
+            try {
+                const profiles = this.getProfiles();
+                const existingIdx = profiles.findIndex(existing => existing.name === p.name);
+                if (existingIdx >= 0) {
+                    if (!profileName || profileName !== p.name) {
+                        // It's a "create" but name already exists, or rename to existing
+                        vscode.window.showErrorMessage(`Connection named "${p.name}" already exists.`);
+                        return;
+                    }
+                    profiles[existingIdx] = p;
                 }
-                profiles[existingIdx] = p;
+                else {
+                    profiles.push(p);
+                }
+                await this.saveProfiles(profiles);
+                if (pwd) {
+                    await this.secretStorage.store(`ingSql.password.${p.name}`, pwd);
+                }
+                vscode.window.showInformationMessage(`Connection "${p.name}" saved.`);
+                panel.close();
+                if (connectAfterSave) {
+                    // Use the password directly for the initial connection to avoid SecretStorage latency/lookup issues
+                    await this.connect(p.name, pwd);
+                }
             }
-            else {
-                profiles.push(p);
-            }
-            await this.saveProfiles(profiles);
-            if (pwd) {
-                await this.secretStorage.store(`ingSql.password.${p.name}`, pwd);
-            }
-            vscode.window.showInformationMessage(`Connection "${p.name}" saved.`);
-            panel.close();
-            if (connectAfterSave) {
-                await this.connect(p.name);
+            catch (err) {
+                vscode.window.showErrorMessage(`Failed to save connection: ${err.message}`);
             }
         });
         panel.show(profile, password);
@@ -146,7 +152,7 @@ class ConnectionManager {
         }
         vscode.window.showInformationMessage(`Connection "${profileName}" removed.`);
     }
-    async connect(profileName) {
+    async connect(profileName, directPassword) {
         const profile = this.getProfiles().find(p => p.name === profileName);
         if (!profile) {
             vscode.window.showErrorMessage(`Connection "${profileName}" not found.`);
@@ -157,7 +163,7 @@ class ConnectionManager {
             this._onDidChangeConnection.fire(profileName);
             return true;
         }
-        const password = await this.secretStorage.get(`ingSql.password.${profileName}`);
+        const password = directPassword || await this.secretStorage.get(`ingSql.password.${profileName}`);
         if (password === undefined) {
             vscode.window.showErrorMessage('Password not found. Please edit the connection.');
             return false;

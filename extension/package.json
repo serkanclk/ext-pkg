@@ -121,12 +121,6 @@
         "icon": "$(graph)"
       },
       {
-        "command": "ingSql.exportData",
-        "title": "Export Data...",
-        "category": "Oracle",
-        "icon": "$(export)"
-      },
-      {
         "command": "ingSql.openData",
         "title": "Open Data",
         "category": "Oracle",
@@ -174,12 +168,6 @@
         "icon": "$(clear-all)"
       },
       {
-        "command": "ingSql.importData",
-        "title": "Import Data (CSV/XLSX)...",
-        "category": "Oracle",
-        "icon": "$(desktop-download)"
-      },
-      {
         "command": "ingSql.verifyThickMode",
         "title": "Verify Oracle Client (Thick Mode)",
         "category": "Oracle"
@@ -218,12 +206,6 @@
         "title": "Insert Snippet",
         "category": "Oracle",
         "icon": "$(symbol-field)"
-      },
-      {
-        "command": "ingSql.copySnippet",
-        "title": "Copy Snippet",
-        "category": "Oracle",
-        "icon": "$(copy)"
       },
       {
         "command": "ingSql.refreshSnippets",
@@ -277,11 +259,6 @@
           "group": "inline@1"
         },
         {
-          "command": "ingSql.copySnippet",
-          "when": "view == ingSql.snippets && viewItem == sql-snippet",
-          "group": "inline@2"
-        },
-        {
           "command": "ingSql.editSnippet",
           "when": "view == ingSql.snippets && viewItem == sql-snippet",
           "group": "snippet@1"
@@ -327,19 +304,9 @@
           "group": "connection@3"
         },
         {
-          "command": "ingSql.importData",
-          "when": "view == ingSql.objectBrowser && viewItem == connection-connected",
-          "group": "connection@4"
-        },
-        {
           "command": "ingSql.openData",
           "when": "view == ingSql.objectBrowser && viewItem =~ /^(table|view|mview)$/",
           "group": "data@1"
-        },
-        {
-          "command": "ingSql.exportData",
-          "when": "view == ingSql.objectBrowser && viewItem =~ /^(table|view|mview)$/",
-          "group": "data@2"
         },
         {
           "command": "ingSql.describeObject",
@@ -464,6 +431,20 @@
           "type": "string",
           "default": "YYYY-MM-DD HH24:MI:SS.FF TZR",
           "description": "Oracle NLS_TIMESTAMP_TZ_FORMAT setting"
+        },
+        "ingSql.connections": {
+          "type": "array",
+          "default": [],
+          "description": "Database connections"
+        },
+        "ingSql.results.location": {
+          "type": "string",
+          "default": "editor",
+          "enum": [
+            "bottom",
+            "editor"
+          ],
+          "description": "Where to display query results"
         }
       }
     },
@@ -493,8 +474,8 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "package:full": "node scripts/prepare-full.js && npx @vscode/vsce package --target darwin-arm64 --target linux-x64",
-    "package:restricted": "node scripts/prepare-restricted.js && npx @vscode/vsce package --target darwin-arm64 --target linux-x64 && git checkout package.json src/buildConfig.ts"
+    "package:full": "node scripts/prepare-full.js && npx @vscode/vsce package --target darwin-arm64 --target darwin-x64 --target linux-x64",
+    "package:restricted": "node scripts/prepare-restricted.js && npx @vscode/vsce package --target darwin-arm64 --target darwin-x64 --target linux-x64 && node scripts/prepare-full.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

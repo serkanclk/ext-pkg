@@ -215,8 +215,7 @@ function activate(context) {
         const viewer = getObjectViewer(item.objectName, item.connectionName);
         viewer.show(item.objectName, objType, item.connectionName, item.schemaName || 'UNKNOWN', 'columns');
     }), vscode.commands.registerCommand('ingSql.verifyThickMode', () => {
-        const config = vscode.workspace.getConfiguration('ingSql');
-        const clientPath = config.get('oracleClientPath');
+        const clientPath = (process.env.ORACLE_CLIENT_PATH || '/usr/lib/oracle/23/client64/lib').trim();
         if (oracleService_1.OracleService.isThickMode()) {
             vscode.window.showInformationMessage(`Oracle Thick Mode is ACTIVE. Using Instant Client at: ${clientPath}`);
         }

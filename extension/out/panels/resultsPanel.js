@@ -173,6 +173,7 @@ class ResultsPanel {
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            ${buildConfig_1.BUILD_CONFIG.isRestricted ? 'user-select: none;' : ''}
         }
 
         /* Toolbar */
@@ -317,6 +318,19 @@ class ResultsPanel {
         let sortDir = 'asc';
 
         function postMsg(msg) { vscode.postMessage(msg); }
+
+        if (${buildConfig_1.BUILD_CONFIG.isRestricted}) {
+            document.addEventListener('contextmenu', e => e.preventDefault());
+            document.addEventListener('copy', e => {
+                e.preventDefault();
+                return false;
+            });
+            document.addEventListener('keydown', e => {
+                if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+                    e.preventDefault();
+                }
+            });
+        }
 
         function toggleFilter() {
             const fb = document.getElementById('filterBar');

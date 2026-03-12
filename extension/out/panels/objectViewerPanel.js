@@ -271,6 +271,7 @@ class ObjectViewerPanel {
             overflow: hidden;
             margin: 0;
             padding: 0;
+            ${buildConfig_1.BUILD_CONFIG.isRestricted ? 'user-select: none;' : ''}
         }
 
         /* Breadcrumb Style */
@@ -617,6 +618,19 @@ class ObjectViewerPanel {
     <script>
         const vscode = acquireVsCodeApi();
         const NULL_DISPLAY = '${nullDisplay}';
+
+        if (${buildConfig_1.BUILD_CONFIG.isRestricted}) {
+            document.addEventListener('contextmenu', e => e.preventDefault());
+            document.addEventListener('copy', e => {
+                e.preventDefault();
+                return false;
+            });
+            document.addEventListener('keydown', e => {
+                if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+                    e.preventDefault();
+                }
+            });
+        }
         
         let loadedTabs = new Set();
         let currentTabId = '';
@@ -844,7 +858,11 @@ class ObjectViewerPanel {
                         td.textContent = String(val);
                         if (numericTypes.includes(dataColumns[c].dbType)) td.className = 'number-value';
                     }
-                    td.ondblclick = function() { vscode.postMessage({ type: 'copyCell', value: String(val ?? '') }); };
+                    td.ondblclick = function() { 
+                        if (!${buildConfig_1.BUILD_CONFIG.isRestricted}) {
+                            vscode.postMessage({ type: 'copyCell', value: String(val ?? '') }); 
+                        }
+                    };
                     tr.appendChild(td);
                 }
                 frag.appendChild(tr);

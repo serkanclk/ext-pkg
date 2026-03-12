@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const packageJsonPath = path.join(__dirname, '..', 'package.json');
+const packageJsonBackupPath = path.join(__dirname, '..', 'package.json.bak');
 const buildConfigPath = path.join(__dirname, '..', 'src', 'buildConfig.ts');
 
 const restrictedCommands = [
@@ -12,6 +13,10 @@ const restrictedCommands = [
 
 function prepareRestricted() {
     console.log('--- Preparing Restricted Build ---');
+
+    // 0. Backup package.json
+    fs.copyFileSync(packageJsonPath, packageJsonBackupPath);
+    console.log('✓ package.json backed up to package.json.bak');
 
     // 1. Update package.json
     const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));

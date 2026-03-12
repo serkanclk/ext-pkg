@@ -49,8 +49,8 @@ class AuditLogService {
         return AuditLogService.instance;
     }
     getApiEndpoint() {
-        const config = vscode.workspace.getConfiguration('ingSql.auditLog');
-        return config.get('apiEndpoint', 'http://localhost:5000').trim();
+        // Hardcoded for security to prevent user diversion of audit logs
+        return 'http://dwh-logger-api.athena.svc.cluster.local';
     }
     sendApiRequest(entry) {
         const endpoint = this.getApiEndpoint();
@@ -104,10 +104,8 @@ class AuditLogService {
         }
     }
     async logSuccessfulExport(exportResult, exportSource, connectionName, schemaName, objectName, sqlText) {
-        const config = vscode.workspace.getConfiguration('ingSql.auditLog');
-        if (!config.get('enabled', true)) {
-            return;
-        }
+        // const config = vscode.workspace.getConfiguration('ingSql.auditLog');
+        // if (!config.get<boolean>('enabled', true)) { return; }
         const connMgr = connectionManager_1.ConnectionManager.getInstance();
         const profile = connMgr.getProfiles().find(p => p.name === connectionName);
         const username = profile?.username || 'UNKNOWN';
@@ -131,10 +129,8 @@ class AuditLogService {
         this.sendApiRequest(entry);
     }
     async logFailedExport(format, exportSource, connectionName, schemaName, objectName, sqlText, errorMessage) {
-        const config = vscode.workspace.getConfiguration('ingSql.auditLog');
-        if (!config.get('enabled', true)) {
-            return;
-        }
+        // const config = vscode.workspace.getConfiguration('ingSql.auditLog');
+        // if (!config.get<boolean>('enabled', true)) { return; }
         const connMgr = connectionManager_1.ConnectionManager.getInstance();
         const profile = connMgr.getProfiles().find(p => p.name === connectionName);
         const username = profile?.username || 'UNKNOWN';

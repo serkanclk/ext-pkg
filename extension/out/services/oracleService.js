@@ -58,8 +58,7 @@ class OracleService {
         return OracleService.thickModeInitialized;
     }
     static initializeThickMode() {
-        const config = vscode.workspace.getConfiguration('ingSql');
-        const clientPath = config.get('oracleClientPath');
+        const clientPath = (process.env.ORACLE_CLIENT_PATH || '/usr/lib/oracle/23/client64/lib').trim();
         if (clientPath && clientPath.trim() !== '') {
             try {
                 oracledb_1.default.initOracleClient({ libDir: clientPath.trim() });
