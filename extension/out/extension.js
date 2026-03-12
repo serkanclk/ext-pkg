@@ -186,6 +186,18 @@ function activate(context) {
         const objType = typeMap[item.objectType] || 'TABLE';
         const viewer = getObjectViewer(item.objectName, item.connectionName);
         viewer.show(item.objectName, objType, item.connectionName, 'columns');
+    }), vscode.commands.registerCommand('ingSql.verifyThickMode', () => {
+        const config = vscode.workspace.getConfiguration('ingSql');
+        const clientPath = config.get('oracleClientPath');
+        if (oracleService_1.OracleService.isThickMode()) {
+            vscode.window.showInformationMessage(`Oracle Thick Mode is ACTIVE. Using Instant Client at: ${clientPath}`);
+        }
+        else if (clientPath && clientPath.trim() !== '') {
+            vscode.window.showErrorMessage(`Oracle Thick Mode is NOT active, despite client path being set. Check Developer Tools or path permissions. Path: ${clientPath}`);
+        }
+        else {
+            vscode.window.showInformationMessage('Oracle is running in default Thin Mode (No client path specified).');
+        }
     }), vscode.commands.registerCommand('ingSql.generateSelect', async (item) => {
         if (!item?.objectName || !item.connectionName) {
             return;

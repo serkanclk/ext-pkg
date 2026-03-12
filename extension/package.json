@@ -172,6 +172,11 @@
         "title": "Import Data (CSV/XLSX)...",
         "category": "Oracle",
         "icon": "$(desktop-download)"
+      },
+      {
+        "command": "ingSql.verifyThickMode",
+        "title": "Verify Oracle Client (Thick Mode)",
+        "category": "Oracle"
       }
     ],
     "menus": {

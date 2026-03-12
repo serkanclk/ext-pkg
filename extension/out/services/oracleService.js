@@ -46,6 +46,7 @@ oracledb_1.default.fetchAsBuffer = [oracledb_1.default.BLOB];
 class OracleService {
     static instance;
     static activeCursors = new Map();
+    static thickModeInitialized = false;
     constructor() { }
     static getInstance() {
         if (!OracleService.instance) {
@@ -53,17 +54,23 @@ class OracleService {
         }
         return OracleService.instance;
     }
+    static isThickMode() {
+        return OracleService.thickModeInitialized;
+    }
     static initializeThickMode() {
         const config = vscode.workspace.getConfiguration('ingSql');
         const clientPath = config.get('oracleClientPath');
         if (clientPath && clientPath.trim() !== '') {
             try {
                 oracledb_1.default.initOracleClient({ libDir: clientPath.trim() });
+                OracleService.thickModeInitialized = true;
                 console.log(`Oracle Thick mode initialized successfully with libDir: ${clientPath}`);
             }
             catch (err) {
+                OracleService.thickModeInitialized = false;
                 console.error('Failed to initialize Oracle Thick mode:', err);
-                vscode.window.showErrorMessage(`Failed to initialize Oracle Thick mode (Check your Oracle Client Path): ${err.message}`);
+                vscode.window.showErrorMessage(`Failed to initialize Oracle Thick mode (Check your Oracle Client Path). Falling back to Thin mode. Error: ${err.message}`, { modal: false } // Change to true if it needs to be blocking, but usually an explicit action like "OK" keeps it visible long enough
+                );
             }
         }
         else {
