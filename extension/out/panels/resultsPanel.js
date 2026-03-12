@@ -155,13 +155,13 @@ class ResultsPanel {
         :root {
             --bg-color: var(--vscode-editor-background);
             --fg-color: var(--vscode-editor-foreground);
-            --border-color: var(--vscode-panel-border);
+            --border-color: var(--vscode-panel-border, var(--vscode-editorWidget-border));
             /* ING Corporate Colors */
             --primary-color: #FF6200; /* ING Orange */
             --primary-hover: #E55800;
-            --header-bg: var(--vscode-editor-background);
+            --header-bg: var(--vscode-editorWidget-background, var(--vscode-editor-background));
             --row-hover: var(--vscode-list-hoverBackground);
-            --row-alt: var(--vscode-editor-inactiveSelectionBackground);
+            --row-alt: var(--vscode-editor-inactiveSelectionBackground, rgba(128, 128, 128, 0.1));
         }
 
         body {

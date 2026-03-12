@@ -249,15 +249,15 @@ class ObjectViewerPanel {
             /* ING / Oracle Orange Theme */
             --primary-color: #FF6200;
             --primary-hover: #E55800;
-            --bg-color: #1e1e1e;
-            --header-bg: #252526;
-            --border-color: #333333;
-            --fg-color: #cccccc;
-            --tab-inactive: #969696;
-            --tab-active: #ffffff;
-            --tab-hover: #ffffff;
-            --row-hover: #2a2d2e;
-            --row-alt: #252526;
+            --bg-color: var(--vscode-editor-background);
+            --header-bg: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
+            --border-color: var(--vscode-widget-border, var(--vscode-panel-border));
+            --fg-color: var(--vscode-editor-foreground);
+            --tab-inactive: var(--vscode-tab-inactiveForeground, #969696);
+            --tab-active: var(--vscode-tab-activeForeground, #ffffff);
+            --tab-hover: var(--vscode-tab-activeForeground, #ffffff);
+            --row-hover: var(--vscode-list-hoverBackground);
+            --row-alt: var(--vscode-editor-inactiveSelectionBackground, rgba(128, 128, 128, 0.1));
         }
 
         body {
