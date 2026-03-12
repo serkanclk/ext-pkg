@@ -3,7 +3,7 @@
 		<Metadata>
 			<Identity Language="en-US" Id="ing-sql" Version="0.1.0" Publisher="ing-sql" TargetPlatform="linux-x64"/>
 			<DisplayName>ING SQL</DisplayName>
-			<Description xml:space="preserve">ING SQL clone for VS Code with export audit logging</Description>
+			<Description xml:space="preserve">Oracle SQL Developer for VS Code (ING Specific)</Description>
 			<Tags>keybindings,oraclesql,OracleSQL,plsql,__ext_osql,__ext_plsql,__ext_pls,__ext_pck,sql</Tags>
 			<Categories>Programming Languages,Other</Categories>
 			<GalleryFlags>Public</GalleryFlags>

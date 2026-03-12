@@ -83,7 +83,37 @@ class OracleService {
         if (!pool) {
             throw new Error('No active connection. Please connect first.');
         }
-        return pool.getConnection();
+        const conn = await pool.getConnection();
+        await this.applyNlsSettings(conn);
+        return conn;
+    }
+    async applyNlsSettings(conn) {
+        const config = vscode.workspace.getConfiguration('ingSql.nls');
+        const language = config.get('language');
+        const territory = config.get('territory');
+        const dateFormat = config.get('dateFormat');
+        const timestampFormat = config.get('timestampFormat');
+        const timestampTzFormat = config.get('timestampTzFormat');
+        const sql = [];
+        if (language)
+            sql.push(`NLS_LANGUAGE = '${language}'`);
+        if (territory)
+            sql.push(`NLS_TERRITORY = '${territory}'`);
+        if (dateFormat)
+            sql.push(`NLS_DATE_FORMAT = '${dateFormat}'`);
+        if (timestampFormat)
+            sql.push(`NLS_TIMESTAMP_FORMAT = '${timestampFormat}'`);
+        if (timestampTzFormat)
+            sql.push(`NLS_TIMESTAMP_TZ_FORMAT = '${timestampTzFormat}'`);
+        if (sql.length > 0) {
+            try {
+                await conn.execute(`ALTER SESSION SET ${sql.join(' ')}`);
+            }
+            catch (err) {
+                console.error('Failed to apply NLS settings:', err.message);
+                // Don't fail the connection, just log it.
+            }
+        }
     }
     async executeQuery(sql, binds = {}, options = {}) {
         const conn = await this.getConnection(options.connectionName);
@@ -240,6 +270,32 @@ class OracleService {
         const conn = await this.getConnection(connectionName);
         try {
             await conn.execute('ROLLBACK');
+        }
+        finally {
+            await conn.close();
+        }
+    }
+    async searchObjects(query, connectionName) {
+        const conn = await this.getConnection(connectionName);
+        try {
+            const types = ['TABLE', 'VIEW', 'MATERIALIZED VIEW', 'FUNCTION', 'PROCEDURE', 'TRIGGER', 'PACKAGE', 'SEQUENCE', 'SYNONYM'];
+            const sql = `
+                SELECT OWNER, OBJECT_NAME, OBJECT_TYPE, STATUS
+                FROM ALL_OBJECTS
+                WHERE (UPPER(OBJECT_NAME) LIKE UPPER(:query) OR UPPER(OWNER) LIKE UPPER(:query))
+                AND OBJECT_TYPE IN (${types.map(t => `'${t}'`).join(',')})
+                AND ROWNUM <= 100
+                ORDER BY OBJECT_NAME
+            `;
+            const result = await conn.execute(sql, { query: `%${query}%` }, {
+                outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
+            });
+            return (result.rows || []).map(row => ({
+                owner: row.OWNER,
+                name: row.OBJECT_NAME,
+                type: row.OBJECT_TYPE,
+                status: row.STATUS
+            }));
         }
         finally {
             await conn.close();

@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ResultsPanel = void 0;
 const vscode = __importStar(require("vscode"));
+const buildConfig_1 = require("../buildConfig");
 class ResultsPanel {
     static viewType = 'ingSql.resultsView';
     view;
@@ -112,6 +113,8 @@ class ResultsPanel {
     handleMessage(message) {
         switch (message.type) {
             case 'export':
+                if (buildConfig_1.BUILD_CONFIG.isRestricted)
+                    return;
                 if (this.currentResults && this.onExportRequest) {
                     this.onExportRequest({
                         format: message.format,
@@ -132,7 +135,9 @@ class ResultsPanel {
                 }
                 break;
             case 'copyCell':
-                vscode.env.clipboard.writeText(message.value);
+                if (!buildConfig_1.BUILD_CONFIG.isRestricted) {
+                    vscode.env.clipboard.writeText(message.value);
+                }
                 break;
         }
     }
@@ -273,9 +278,11 @@ class ResultsPanel {
         <span class="info" id="infoText"></span>
         <button id="loadMoreBtn" class="load-more-btn" onclick="postMsg({type:'loadMore'})" style="display: none;"> ↓ Load More</button>
         <div class="toolbar-right">
+            ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : `
             <button class="icon-btn" onclick="postMsg({ type: 'export' })" title="Export">
                 <svg viewBox="0 0 16 16"><path d="M14 6L14 14L2 14L2 6L4 6L4 12L12 12L12 6L14 6ZM8 10L11 7L9 7L9 2L7 2L7 7L5 7L8 10Z"/></svg>
             </button>
+            `}
             <button class="icon-btn" onclick="toggleFilter()" title="Filter">
                 <svg viewBox="0 0 16 16"><path d="M14.5 3L1.5 3L6.5 8.7L6.5 13L9.5 11.5L9.5 8.7L14.5 3ZM12.3 4L3.7 4L7.5 8.3L7.5 10.6L8.5 10.1L8.5 8.3L12.3 4Z"/></svg>
             </button>
@@ -398,7 +405,9 @@ class ResultsPanel {
                         }
                     }
                     td.ondblclick = function() {
-                        vscode.postMessage({ type: 'copyCell', value: String(val ?? '') });
+                        if (!${buildConfig_1.BUILD_CONFIG.isRestricted}) {
+                            vscode.postMessage({ type: 'copyCell', value: String(val ?? '') });
+                        }
                     };
                     tr.appendChild(td);
                 }

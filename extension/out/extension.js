@@ -45,9 +45,13 @@ const objectBrowserProvider_1 = require("./providers/objectBrowserProvider");
 const sqlLanguageProvider_1 = require("./providers/sqlLanguageProvider");
 const sqlHistoryProvider_1 = require("./providers/sqlHistoryProvider");
 const dbmsOutputProvider_1 = require("./providers/dbmsOutputProvider");
+const sqlSnippetsProvider_1 = require("./providers/sqlSnippetsProvider");
 const sqlWorksheet_1 = require("./commands/sqlWorksheet");
 const resultsPanel_1 = require("./panels/resultsPanel");
 const objectViewerPanel_1 = require("./panels/objectViewerPanel");
+const snippetEditorPanel_1 = require("./panels/snippetEditorPanel");
+const treeItems_1 = require("./models/treeItems");
+const buildConfig_1 = require("./buildConfig");
 function activate(context) {
     vscode.window.showInformationMessage('ING SQL Developer extension is activating...');
     console.log('ING SQL Developer extension is now active!');
@@ -64,7 +68,9 @@ function activate(context) {
     const sqlLanguageProvider = new sqlLanguageProvider_1.SqlLanguageProvider();
     const sqlHistoryProvider = new sqlHistoryProvider_1.SqlHistoryProvider(context);
     const dbmsOutputProvider = new dbmsOutputProvider_1.DbmsOutputProvider();
+    const sqlSnippetsProvider = new sqlSnippetsProvider_1.SqlSnippetsProvider(context);
     const resultsPanel = new resultsPanel_1.ResultsPanel(context.extensionUri);
+    const snippetEditorPanel = new snippetEditorPanel_1.SnippetEditorPanel(context.extensionUri);
     const sqlWorksheetCommands = new sqlWorksheet_1.SqlWorksheetCommands(context, resultsPanel, sqlHistoryProvider);
     // ─── Object Viewer Management ───
     const objectViewers = new Map();
@@ -105,6 +111,9 @@ function activate(context) {
     });
     const sqlHistoryView = vscode.window.createTreeView('ingSql.sqlHistory', {
         treeDataProvider: sqlHistoryProvider
+    });
+    const sqlSnippetsView = vscode.window.createTreeView('ingSql.snippets', {
+        treeDataProvider: sqlSnippetsProvider
     });
     // ─── Register Language Features ───
     const langSelector = { language: 'oraclesql', scheme: '*' };
@@ -152,12 +161,16 @@ function activate(context) {
                 dbmsOutputProvider.enableForConnection(item.connectionName);
             }
         }
-    }), vscode.commands.registerCommand('ingSql.importData', async (item) => {
-        if (item?.connectionName) {
-            await importService.promptAndImport(item.connectionName);
-            objectBrowserProvider.refresh();
-        }
-    }), vscode.commands.registerCommand('ingSql.disconnect', (item) => {
+    }));
+    if (!buildConfig_1.BUILD_CONFIG.isRestricted) {
+        context.subscriptions.push(vscode.commands.registerCommand('ingSql.importData', async (item) => {
+            if (item?.connectionName) {
+                await importService.promptAndImport(item.connectionName);
+                objectBrowserProvider.refresh();
+            }
+        }));
+    }
+    context.subscriptions.push(vscode.commands.registerCommand('ingSql.disconnect', (item) => {
         if (item?.connectionName) {
             connMgr.disconnect(item.connectionName);
         }
@@ -216,6 +229,85 @@ function activate(context) {
     }), vscode.commands.registerCommand('ingSql.showResultsInTab', (result) => {
         const panel = vscode.window.createWebviewPanel('ingSqlQueryResult', `Query Result (${new Date().toLocaleTimeString()})`, vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
         objectViewerPanel_1.ObjectViewerPanel.createOrShowQueryResults(panel, result, context.extensionUri);
+    }), vscode.commands.registerCommand('ingSql.searchObjects', async (contextItem) => {
+        let connectionName = contextItem?.connectionName;
+        if (!connectionName) {
+            const profiles = connMgr.getProfiles();
+            if (profiles.length === 0) {
+                vscode.window.showErrorMessage('No connections configured.');
+                return;
+            }
+            const selected = await vscode.window.showQuickPick(profiles.map(p => p.name), { placeHolder: 'Select connection for search' });
+            if (!selected)
+                return;
+            connectionName = selected;
+        }
+        const quickPick = vscode.window.createQuickPick();
+        quickPick.placeholder = 'Search objects (Tables, Views, Procedures, etc.)...';
+        quickPick.busy = false;
+        let timeout;
+        quickPick.onDidChangeValue(value => {
+            if (timeout)
+                clearTimeout(timeout);
+            if (value.length < 2) {
+                quickPick.items = [];
+                return;
+            }
+            quickPick.busy = true;
+            timeout = setTimeout(async () => {
+                try {
+                    const results = await oracleService.searchObjects(value, connectionName);
+                    quickPick.items = results.map(obj => ({
+                        label: obj.name,
+                        description: `${obj.type} • ${obj.owner}`,
+                        picked: false,
+                        alwaysShow: true,
+                        // Store metadata for the selection handler
+                        detail: JSON.stringify({ name: obj.name, type: obj.type, owner: rowToSchema(obj.type), schema: obj.owner })
+                    }));
+                }
+                catch (err) {
+                    console.error('Search error:', err);
+                }
+                finally {
+                    quickPick.busy = false;
+                }
+            }, 400);
+        });
+        // Helper to map DB types to extension internal types for describeObject
+        const typeToInternal = (dbType) => {
+            const map = {
+                'TABLE': 'table', 'VIEW': 'view', 'MATERIALIZED VIEW': 'mview',
+                'INDEX': 'index', 'SEQUENCE': 'sequence', 'SYNONYM': 'synonym',
+                'DATABASE LINK': 'dblink', 'TRIGGER': 'trigger',
+                'PROCEDURE': 'procedure', 'FUNCTION': 'function', 'PACKAGE': 'package', 'TYPE': 'type'
+            };
+            return map[dbType] || 'table';
+        };
+        const rowToSchema = (dbType) => {
+            // This is just a placeholder to pass something that looks like an OracleTreeItem
+            return '';
+        };
+        quickPick.onDidAccept(() => {
+            const selection = quickPick.selectedItems[0];
+            if (selection) {
+                const meta = JSON.parse(selection.detail);
+                quickPick.hide();
+                // Create a dummy OracleTreeItem to reuse existing describe logic
+                const dummyItem = new treeItems_1.OracleTreeItem(meta.name, typeToInternal(meta.type), vscode.TreeItemCollapsibleState.None, connectionName, meta.schema, meta.name);
+                if (['table', 'view', 'mview'].includes(dummyItem.objectType)) {
+                    vscode.commands.executeCommand('ingSql.describeObject', dummyItem);
+                }
+                else if (['procedure', 'function', 'package', 'trigger', 'type'].includes(dummyItem.objectType)) {
+                    vscode.commands.executeCommand('ingSql.viewSource', dummyItem);
+                }
+                else {
+                    vscode.commands.executeCommand('ingSql.describeObject', dummyItem);
+                }
+            }
+        });
+        quickPick.onDidHide(() => quickPick.dispose());
+        quickPick.show();
     }), vscode.commands.registerCommand('ingSql.about', () => {
         const mode = oracleService_1.OracleService.isThickMode() ? 'Thick' : 'Thin';
         vscode.window.showInformationMessage(`ING SQL Developer v0.1.0 - Mode: ${mode}`);
@@ -299,33 +391,70 @@ function activate(context) {
         catch (err) {
             vscode.window.showErrorMessage(`Drop error: ${err.message}`);
         }
+    }), 
+    // SQL Snippets commands
+    vscode.commands.registerCommand('ingSql.addSnippet', () => {
+        snippetEditorPanel.setSaveHandler(async (data) => {
+            await sqlSnippetsProvider.addSnippet(data.name, data.content);
+            snippetEditorPanel.close();
+        });
+        snippetEditorPanel.show();
+    }), vscode.commands.registerCommand('ingSql.editSnippet', (item) => {
+        snippetEditorPanel.setSaveHandler(async (data) => {
+            await sqlSnippetsProvider.updateSnippet(item.id, data.name, data.content);
+            snippetEditorPanel.close();
+        });
+        snippetEditorPanel.show({ id: item.id, name: item.label, content: item.content });
+    }), vscode.commands.registerCommand('ingSql.deleteSnippet', async (item) => {
+        const confirm = await vscode.window.showWarningMessage(`Are you sure you want to delete snippet "${item.label}"?`, 'Yes', 'No');
+        if (confirm === 'Yes') {
+            await sqlSnippetsProvider.deleteSnippet(item.id);
+        }
+    }), vscode.commands.registerCommand('ingSql.insertSnippet', async (item) => {
+        const editor = vscode.window.activeTextEditor;
+        if (editor) {
+            await editor.insertSnippet(new vscode.SnippetString(item.content));
+        }
+        else {
+            vscode.window.showWarningMessage('No active editor to insert snippet.');
+        }
+    }), vscode.commands.registerCommand('ingSql.refreshSnippets', () => {
+        sqlSnippetsProvider.refresh();
     }));
+    if (!buildConfig_1.BUILD_CONFIG.isRestricted) {
+        context.subscriptions.push(vscode.commands.registerCommand('ingSql.copySnippet', async (item) => {
+            await vscode.env.clipboard.writeText(item.content);
+            vscode.window.showInformationMessage(`Snippet "${item.label}" copied to clipboard.`);
+        }));
+    }
     // Export command (from object browser)
-    context.subscriptions.push(vscode.commands.registerCommand('ingSql.exportData', async (item) => {
-        if (!item?.objectName || !item.connectionName) {
-            return;
-        }
-        const profile = connMgr.getProfiles().find(p => p.name === item.connectionName);
-        if (!profile) {
-            return;
-        }
-        try {
-            const sql = `SELECT * FROM "${item.objectName}"`;
-            const exportResult = await exportService.promptAndExport({
-                format: '', // Will prompt user
-                statement: sql,
-                connectionName: item.connectionName,
-                tableName: item.objectName,
-            });
-            if (exportResult) {
-                await auditLogService.logSuccessfulExport(exportResult, 'OBJECT_BROWSER', item.connectionName, profile.username, item.objectName, sql);
+    if (!buildConfig_1.BUILD_CONFIG.isRestricted) {
+        context.subscriptions.push(vscode.commands.registerCommand('ingSql.exportData', async (item) => {
+            if (!item?.objectName || !item.connectionName) {
+                return;
             }
-        }
-        catch (err) {
-            await auditLogService.logFailedExport('csv', 'OBJECT_BROWSER', item.connectionName, profile.username, item.objectName, null, err.message);
-            vscode.window.showErrorMessage(`Export error: ${err.message}`);
-        }
-    }));
+            const profile = connMgr.getProfiles().find(p => p.name === item.connectionName);
+            if (!profile) {
+                return;
+            }
+            try {
+                const sql = `SELECT * FROM "${item.objectName}"`;
+                const exportResult = await exportService.promptAndExport({
+                    format: '', // Will prompt user
+                    statement: sql,
+                    connectionName: item.connectionName,
+                    tableName: item.objectName,
+                });
+                if (exportResult) {
+                    await auditLogService.logSuccessfulExport(exportResult, 'OBJECT_BROWSER', item.connectionName, profile.username, item.objectName, sql);
+                }
+            }
+            catch (err) {
+                await auditLogService.logFailedExport('csv', 'OBJECT_BROWSER', item.connectionName, profile.username, item.objectName, null, err.message);
+                vscode.window.showErrorMessage(`Export error: ${err.message}`);
+            }
+        }));
+    }
     // Transaction commands
     context.subscriptions.push(vscode.commands.registerCommand('ingSql.commit', async () => {
         try {
@@ -385,7 +514,7 @@ function activate(context) {
         }
     });
     // ─── Disposables ───
-    context.subscriptions.push(objectBrowserView, sqlHistoryView, { dispose: () => connMgr.dispose() }, { dispose: () => resultsPanel.dispose() }, { dispose: () => dbmsOutputProvider.dispose() }, { dispose: () => auditLogService.dispose() });
+    context.subscriptions.push(objectBrowserView, sqlHistoryView, sqlSnippetsView, { dispose: () => connMgr.dispose() }, { dispose: () => resultsPanel.dispose() }, { dispose: () => dbmsOutputProvider.dispose() }, { dispose: () => auditLogService.dispose() });
     console.log('ING SQL extension activated successfully.');
 }
 function deactivate() {

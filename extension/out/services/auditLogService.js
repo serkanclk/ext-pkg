@@ -50,7 +50,7 @@ class AuditLogService {
     }
     getApiEndpoint() {
         const config = vscode.workspace.getConfiguration('ingSql.auditLog');
-        return config.get('apiEndpoint', '').trim();
+        return config.get('apiEndpoint', 'http://localhost:5000').trim();
     }
     sendApiRequest(entry) {
         const endpoint = this.getApiEndpoint();
