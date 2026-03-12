@@ -42,6 +42,7 @@ class ObjectViewerPanel {
     currentConnectionName;
     currentObjectName;
     currentObjectType;
+    currentSchemaName;
     // Data Grid state tracking
     currentCursorId;
     isExporting = false;
@@ -52,28 +53,59 @@ class ObjectViewerPanel {
     setExportHandler(handler) {
         this.onExportRequest = handler;
     }
-    async show(objectName, objectType, connectionName, defaultTab = 'columns') {
+    async show(objectName, objectType, connectionName, schemaName, defaultTab = 'columns') {
         this.currentObjectName = objectName;
         this.currentObjectType = objectType;
         this.currentConnectionName = connectionName;
+        this.currentSchemaName = schemaName;
         if (!this.panel) {
             this.panel = vscode.window.createWebviewPanel('ingSqlObjectViewer', `${objectName}`, { viewColumn: vscode.ViewColumn.One, preserveFocus: false }, {
                 enableScripts: true,
                 retainContextWhenHidden: true,
                 localResourceRoots: [this.extensionUri]
             });
-            this.panel.onDidDispose(() => {
-                this.panel = undefined;
-                this.currentCursorId = undefined;
-            });
-            this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg));
+            this.initPanel(this.panel);
         }
         this.panel.title = `${objectName}`;
-        this.panel.webview.html = this.getHtmlBase();
+        this.panel.webview.html = this.getHtmlBase(false);
         // Let the webview initialize, then command it to fetch its own data.
         setTimeout(() => {
             this.panel?.webview.postMessage({ type: 'init', defaultTab });
         }, 100);
+    }
+    async showQueryResults(result) {
+        if (!this.panel)
+            return;
+        this.currentConnectionName = 'SQL';
+        this.panel.webview.html = this.getHtmlBase(true);
+        const formattedRows = result.rows.map(row => row.map(val => Buffer.isBuffer(val) ? val.toString('hex').toUpperCase() : val));
+        this.currentCursorId = result.cursorId;
+        setTimeout(() => {
+            this.panel?.webview.postMessage({ type: 'init', defaultTab: 'data' });
+            this.panel?.webview.postMessage({
+                type: 'renderData',
+                columns: result.columns,
+                rows: formattedRows,
+                rowCount: result.rowCount,
+                executionTime: result.executionTime,
+                hasMore: result.hasMore,
+                statement: result.statement
+            });
+        }, 100);
+    }
+    static createOrShowQueryResults(panel, result, extensionUri) {
+        const instance = new ObjectViewerPanel(extensionUri);
+        instance.panel = panel;
+        instance.initPanel(panel);
+        instance.showQueryResults(result);
+        return instance;
+    }
+    initPanel(panel) {
+        panel.onDidDispose(() => {
+            this.panel = undefined;
+            this.currentCursorId = undefined;
+        });
+        panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg));
     }
     async handleMessage(message) {
         if (!this.currentObjectName || !this.currentConnectionName || !this.currentObjectType) {
@@ -104,7 +136,8 @@ class ObjectViewerPanel {
                         this.onExportRequest({
                             format: message.format,
                             sql: sql,
-                            connectionName: this.currentConnectionName
+                            connectionName: this.currentConnectionName,
+                            objectName: this.currentObjectName
                         });
                     }
                     break;
@@ -168,14 +201,37 @@ class ObjectViewerPanel {
                 const ddl = await oracleService.getObjectDDL(this.currentObjectName, this.currentObjectType, this.currentConnectionName);
                 this.panel?.webview.postMessage({ type: 'renderDdl', ddl: ddl || 'No DDL available.' });
             }
+            else if (tabId === 'dependencies') {
+                const { dependencies, referencedBy } = await oracleService.getDependencies(this.currentObjectName, this.currentConnectionName);
+                this.panel?.webview.postMessage({ type: 'renderDependencies', dependencies, referencedBy });
+            }
+            else if (['stats', 'grants', 'triggers', 'flashback', 'details', 'partitions', 'json'].includes(tabId)) {
+                // Return a generic success to clear loader
+                const type = `render${tabId.charAt(0).toUpperCase()}${tabId.slice(1)}`;
+                this.panel?.webview.postMessage({ type });
+            }
         }
         catch (err) {
             throw err;
         }
     }
-    getHtmlBase() {
+    getHtmlBase(hideTabs = false) {
         const config = vscode.workspace.getConfiguration('ingSql');
         const nullDisplay = config.get('resultGrid.nullDisplay', '(null)');
+        // Build breadcrumb
+        const breadcrumb = hideTabs ? '' : `
+            <div class="breadcrumb">
+                <span class="breadcrumb-item">${this.currentConnectionName || ''}</span>
+                <span class="breadcrumb-sep">&gt;</span>
+                <span class="breadcrumb-item">object</span>
+                <span class="breadcrumb-sep">&gt;</span>
+                <span class="breadcrumb-item">${this.currentSchemaName || ''}</span>
+                <span class="breadcrumb-sep">&gt;</span>
+                <span class="breadcrumb-item">${this.currentObjectType || ''}</span>
+                <span class="breadcrumb-sep">&gt;</span>
+                <span class="breadcrumb-item-active">${this.currentObjectName || ''}</span>
+            </div>
+        `;
         return /*html*/ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -185,53 +241,92 @@ class ObjectViewerPanel {
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
-            --bg-color: var(--vscode-editor-background);
-            --fg-color: var(--vscode-editor-foreground);
-            --border-color: var(--vscode-panel-border);
-            /* ING Corporate Colors */
-            --primary-color: #FF6200; /* ING Orange */
+            /* ING / Oracle Orange Theme */
+            --primary-color: #FF6200;
             --primary-hover: #E55800;
-            --header-bg: var(--vscode-editor-background);
-            --row-hover: var(--vscode-list-hoverBackground);
-            --row-alt: var(--vscode-editor-inactiveSelectionBackground);
+            --bg-color: #1e1e1e;
+            --header-bg: #252526;
+            --border-color: #333333;
+            --fg-color: #cccccc;
+            --tab-inactive: #969696;
+            --tab-active: #ffffff;
+            --tab-hover: #ffffff;
+            --row-hover: #2a2d2e;
+            --row-alt: #252526;
         }
 
         body {
             font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
-            font-size: var(--vscode-font-size, 13px);
+            font-size: var(--vscode-font-size, 12px);
             color: var(--fg-color);
             background: var(--bg-color);
             height: 100vh;
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Breadcrumb Style */
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            padding: 8px 16px;
+            background: var(--header-bg);
+            font-size: 11px;
+            color: var(--tab-inactive);
+            border-bottom: 1px solid var(--border-color);
+            gap: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            flex-shrink: 0;
+        }
+        .breadcrumb-sep {
+            color: #555555;
+            font-size: 10px;
+        }
+        .breadcrumb-item-active {
+            color: var(--fg-color);
+            font-weight: 600;
         }
 
         /* Top Tab Bar */
         .tab-bar {
             display: flex;
-            background: var(--bg-color);
+            background: var(--header-bg);
             border-bottom: 1px solid var(--border-color);
-            padding: 0 16px;
+            padding: 0 8px;
             flex-shrink: 0;
             overflow-x: auto;
+            scrollbar-width: none;
         }
+        .tab-bar::-webkit-scrollbar { display: none; }
+
         .tab {
             padding: 10px 16px;
             cursor: pointer;
-            color: var(--vscode-tab-inactiveForeground);
-            border-bottom: 2px solid transparent;
-            font-size: 13px;
+            color: var(--tab-inactive);
             white-space: nowrap;
-            transition: color 0.2s, border-bottom-color 0.2s;
+            position: relative;
+            transition: color 0.1s;
+            font-size: 12px;
         }
         .tab:hover {
-            color: var(--vscode-tab-activeForeground);
+            color: var(--tab-hover);
         }
         .tab.active {
-            color: var(--vscode-tab-activeForeground);
-            border-bottom-color: var(--primary-color);
-            font-weight: 600;
+            color: var(--tab-active);
+            font-weight: 500;
+        }
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background-color: var(--primary-color);
         }
 
         /* Content Area */
@@ -379,12 +474,23 @@ class ObjectViewerPanel {
 </head>
 <body>
     
+    <!-- Breadcrumb -->
+    ${breadcrumb}
+    
     <!-- Tab Bar -->
-    <div class="tab-bar">
+    <div class="tab-bar" style="${hideTabs ? 'display: none;' : ''}">
         <div class="tab" data-target="columns">Columns</div>
         <div class="tab" data-target="data">Data</div>
         <div class="tab" data-target="constraints">Constraints</div>
+        <div class="tab" data-target="grants">Grants</div>
+        <div class="tab" data-target="stats">Statistics</div>
+        <div class="tab" data-target="triggers">Triggers</div>
+        <div class="tab" data-target="flashback">Flashback</div>
+        <div class="tab" data-target="dependencies">Dependencies</div>
+        <div class="tab" data-target="details">Details</div>
+        <div class="tab" data-target="partitions">Partitions</div>
         <div class="tab" data-target="indexes">Indexes</div>
+        <div class="tab" data-target="json">JSON Schema</div>
         <div class="tab" data-target="ddl">SQL</div>
     </div>
 
@@ -414,6 +520,18 @@ class ObjectViewerPanel {
         </div>
     </div>
 
+    <!-- Grants Tab -->
+    <div id="grants" class="tab-content"><div class="generic-table-container"><p>Grants information will be displayed here.</p></div></div>
+
+    <!-- Statistics Tab -->
+    <div id="stats" class="tab-content"><div class="generic-table-container"><p>Statistics information will be displayed here.</p></div></div>
+
+    <!-- Triggers Tab -->
+    <div id="triggers" class="tab-content"><div class="generic-table-container"><p>Triggers information will be displayed here.</p></div></div>
+
+    <!-- Flashback Tab -->
+    <div id="flashback" class="tab-content"><div class="generic-table-container"><p>Flashback information will be displayed here.</p></div></div>
+
     <!-- Indexes Tab -->
     <div id="indexes" class="tab-content">
         <div class="generic-table-container">
@@ -428,6 +546,32 @@ class ObjectViewerPanel {
     <div id="ddl" class="tab-content">
         <div class="ddl-container">
             <pre class="ddl" id="ddlBody"></pre>
+        </div>
+    </div>
+
+    <!-- Details Tab -->
+    <div id="details" class="tab-content"><div class="generic-table-container"><p>Object details will be displayed here.</p></div></div>
+
+    <!-- Partitions Tab -->
+    <div id="partitions" class="tab-content"><div class="generic-table-container"><p>Partitions information will be displayed here.</p></div></div>
+
+    <!-- JSON Schema Tab -->
+    <div id="json" class="tab-content"><div class="generic-table-container"><p>JSON Schema will be displayed here.</p></div></div>
+
+    <!-- Dependencies Tab -->
+    <div id="dependencies" class="tab-content">
+        <div class="generic-table-container">
+            <h3 style="padding: 10px 0; color: var(--primary-color); border-bottom: 1px solid var(--border-color); margin-bottom: 10px;">Depends On</h3>
+            <table>
+                <thead><tr><th>Owner</th><th>Name</th><th>Type</th><th>Dependency Type</th></tr></thead>
+                <tbody id="dependenciesBody"></tbody>
+            </table>
+
+            <h3 style="padding: 10px 0; color: var(--primary-color); border-bottom: 1px solid var(--border-color); margin-top: 30px; margin-bottom: 10px;">Referenced By</h3>
+            <table>
+                <thead><tr><th>Owner</th><th>Name</th><th>Type</th><th>Dependency Type</th></tr></thead>
+                <tbody id="referencedByBody"></tbody>
+            </table>
         </div>
     </div>
 
@@ -560,6 +704,11 @@ class ObjectViewerPanel {
                 document.getElementById('ddlBody').textContent = msg.ddl;
                 updateStatus('SQL DDL loaded');
             }
+            else if (['renderGrants', 'renderStats', 'renderTriggers', 'renderFlashback', 'renderDetails', 'renderPartitions', 'renderJson'].includes(msg.type)) {
+                const tabId = msg.type.replace('render', '').toLowerCase();
+                loadedTabs.add(tabId === 'sql' ? 'ddl' : tabId);
+                updateStatus(tabId.charAt(0).toUpperCase() + tabId.slice(1) + ' loaded');
+            }
             else if (msg.type === 'renderData') {
                 loadedTabs.add('data');
                 dataColumns = msg.columns;
@@ -569,6 +718,16 @@ class ObjectViewerPanel {
                 updateDataInfo(msg.rowCount, msg.hasMore, msg.executionTime);
                 renderDataTable();
                 updateStatus('Data loaded');
+            }
+            else if (msg.type === 'renderDependencies') {
+                loadedTabs.add('dependencies');
+                const depsHtml = msg.dependencies.map(d => '<tr><td>' + d.OWNER + '</td><td class="obj-name">' + d.NAME + '</td><td>' + d.TYPE + '</td><td>' + d.DEPENDENCY_TYPE + '</td></tr>').join('');
+                document.getElementById('dependenciesBody').innerHTML = depsHtml || '<tr><td colspan="4">No outgoing dependencies.</td></tr>';
+                
+                const refHtml = msg.referencedBy.map(d => '<tr><td>' + d.OWNER + '</td><td class="obj-name">' + d.NAME + '</td><td>' + d.TYPE + '</td><td>' + d.DEPENDENCY_TYPE + '</td></tr>').join('');
+                document.getElementById('referencedByBody').innerHTML = refHtml || '<tr><td colspan="4">No incoming dependencies.</td></tr>';
+                
+                updateStatus('Dependencies loaded');
             }
             else if (msg.type === 'appendData') {
                 dataRows = dataRows.concat(msg.rows);

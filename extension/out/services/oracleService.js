@@ -511,6 +511,44 @@ class OracleService {
             await conn.close();
         }
     }
+    async getDependencies(objectName, connectionName) {
+        const conn = await this.getConnection(connectionName);
+        try {
+            // Objects this object depends on
+            const depsSql = `
+                SELECT REFERENCED_OWNER AS OWNER, 
+                       REFERENCED_NAME AS NAME, 
+                       REFERENCED_TYPE AS TYPE, 
+                       DEPENDENCY_TYPE
+                FROM ALL_DEPENDENCIES
+                WHERE OWNER = USER AND NAME = :name
+                ORDER BY TYPE, NAME
+            `;
+            const depsResult = await conn.execute(depsSql, { name: objectName }, {
+                outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
+            });
+            // Objects that reference this object
+            const refSql = `
+                SELECT OWNER, 
+                       NAME, 
+                       TYPE, 
+                       DEPENDENCY_TYPE
+                FROM ALL_DEPENDENCIES
+                WHERE REFERENCED_OWNER = USER AND REFERENCED_NAME = :name
+                ORDER BY TYPE, NAME
+            `;
+            const refResult = await conn.execute(refSql, { name: objectName }, {
+                outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
+            });
+            return {
+                dependencies: (depsResult.rows || []),
+                referencedBy: (refResult.rows || [])
+            };
+        }
+        finally {
+            await conn.close();
+        }
+    }
     async getPrimaryKeyColumns(tableName, connectionName) {
         const conn = await this.getConnection(connectionName);
         try {

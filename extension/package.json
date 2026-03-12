@@ -177,6 +177,11 @@
         "command": "ingSql.verifyThickMode",
         "title": "Verify Oracle Client (Thick Mode)",
         "category": "Oracle"
+      },
+      {
+        "command": "ingSql.about",
+        "title": "About ING SQL",
+        "category": "Oracle"
       }
     ],
     "menus": {
@@ -394,6 +399,15 @@
           "type": "string",
           "default": "",
           "description": "Path to the Oracle Instant Client libraries (e.g., /opt/oracle/instantclient_21_13). Required for Thick mode connections."
+        },
+        "ingSql.results.location": {
+          "type": "string",
+          "enum": [
+            "Panel",
+            "Editor"
+          ],
+          "default": "Panel",
+          "description": "Where to display query and data results. 'Panel' uses the bottom Results view, 'Editor' opens an editor tab."
         },
         "ingSql.resultGrid.pageSize": {
           "type": "number",

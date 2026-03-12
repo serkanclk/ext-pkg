@@ -49,6 +49,7 @@ const sqlWorksheet_1 = require("./commands/sqlWorksheet");
 const resultsPanel_1 = require("./panels/resultsPanel");
 const objectViewerPanel_1 = require("./panels/objectViewerPanel");
 function activate(context) {
+    vscode.window.showInformationMessage('ING SQL Developer extension is activating...');
     console.log('ING SQL Developer extension is now active!');
     // ─── Initialize Oracle Thick Mode ───
     oracleService_1.OracleService.initializeThickMode();
@@ -72,12 +73,26 @@ function activate(context) {
         let viewer = objectViewers.get(key);
         if (!viewer) {
             viewer = new objectViewerPanel_1.ObjectViewerPanel(context.extensionUri);
-            viewer.setExportHandler(data => {
-                exportService.promptAndExport({
-                    format: data.format,
-                    statement: data.sql,
-                    connectionName: data.connectionName
-                });
+            viewer.setExportHandler(async (data) => {
+                const profile = connMgr.getProfiles().find(p => p.name === data.connectionName);
+                if (!profile) {
+                    vscode.window.showWarningMessage('No active connection context found for export.');
+                    return;
+                }
+                try {
+                    const result = await exportService.promptAndExport({
+                        format: data.format,
+                        statement: data.sql,
+                        connectionName: data.connectionName,
+                        tableName: data.objectName
+                    });
+                    if (result) {
+                        await auditLogService.logSuccessfulExport(result, 'RESULTS_GRID', data.connectionName, profile.username, data.objectName || null, data.sql);
+                    }
+                }
+                catch (err) {
+                    await auditLogService.logFailedExport(data.format, 'RESULTS_GRID', data.connectionName, profile.username, data.objectName || null, data.sql, err.message);
+                }
             });
             objectViewers.set(key, viewer);
         }
@@ -173,7 +188,7 @@ function activate(context) {
         };
         const objType = typeMap[item.objectType] || 'TABLE';
         const viewer = getObjectViewer(item.objectName, item.connectionName);
-        viewer.show(item.objectName, objType, item.connectionName, 'data');
+        viewer.show(item.objectName, objType, item.connectionName, item.schemaName || 'UNKNOWN', 'data');
     }), vscode.commands.registerCommand('ingSql.describeObject', (item) => {
         if (!item?.objectName || !item.connectionName) {
             return;
@@ -185,7 +200,7 @@ function activate(context) {
         };
         const objType = typeMap[item.objectType] || 'TABLE';
         const viewer = getObjectViewer(item.objectName, item.connectionName);
-        viewer.show(item.objectName, objType, item.connectionName, 'columns');
+        viewer.show(item.objectName, objType, item.connectionName, item.schemaName || 'UNKNOWN', 'columns');
     }), vscode.commands.registerCommand('ingSql.verifyThickMode', () => {
         const config = vscode.workspace.getConfiguration('ingSql');
         const clientPath = config.get('oracleClientPath');
@@ -193,11 +208,17 @@ function activate(context) {
             vscode.window.showInformationMessage(`Oracle Thick Mode is ACTIVE. Using Instant Client at: ${clientPath}`);
         }
         else if (clientPath && clientPath.trim() !== '') {
-            vscode.window.showErrorMessage(`Oracle Thick Mode is NOT active, despite client path being set. Check Developer Tools or path permissions. Path: ${clientPath}`);
+            vscode.window.showErrorMessage(`Oracle Thick Mode is NOT active, despite client path being set. Check path permissions or missing libaio. Path: ${clientPath}`);
         }
         else {
             vscode.window.showInformationMessage('Oracle is running in default Thin Mode (No client path specified).');
         }
+    }), vscode.commands.registerCommand('ingSql.showResultsInTab', (result) => {
+        const panel = vscode.window.createWebviewPanel('ingSqlQueryResult', `Query Result (${new Date().toLocaleTimeString()})`, vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
+        objectViewerPanel_1.ObjectViewerPanel.createOrShowQueryResults(panel, result, context.extensionUri);
+    }), vscode.commands.registerCommand('ingSql.about', () => {
+        const mode = oracleService_1.OracleService.isThickMode() ? 'Thick' : 'Thin';
+        vscode.window.showInformationMessage(`ING SQL Developer v0.1.0 - Mode: ${mode}`);
     }), vscode.commands.registerCommand('ingSql.generateSelect', async (item) => {
         if (!item?.objectName || !item.connectionName) {
             return;
@@ -343,9 +364,10 @@ function activate(context) {
     }));
     // ─── Status Bar ───
     const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-    statusBarItem.command = 'ingSql.addConnection';
-    statusBarItem.text = '$(database) Oracle: Not Connected';
-    statusBarItem.tooltip = 'Click to manage Oracle connections';
+    statusBarItem.command = 'ingSql.verifyThickMode';
+    const modeStr = oracleService_1.OracleService.isThickMode() ? 'Thick' : 'Thin';
+    statusBarItem.text = `$(database) Oracle (${modeStr}): Not Connected`;
+    statusBarItem.tooltip = `Oracle Connection Status (Running in ${modeStr} Mode). Click to verify.`;
     statusBarItem.show();
     context.subscriptions.push(statusBarItem);
     connMgr.onDidChangeConnection((name) => {

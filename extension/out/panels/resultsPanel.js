@@ -146,165 +146,95 @@ class ResultsPanel {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Query Results</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg-color: var(--vscode-editor-background);
+            --fg-color: var(--vscode-editor-foreground);
+            --border-color: var(--vscode-panel-border);
+            /* ING Corporate Colors */
+            --primary-color: #FF6200; /* ING Orange */
+            --primary-hover: #E55800;
+            --header-bg: var(--vscode-editor-background);
+            --row-hover: var(--vscode-list-hoverBackground);
+            --row-alt: var(--vscode-editor-inactiveSelectionBackground);
+        }
+
         body {
             font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
             font-size: var(--vscode-font-size, 13px);
-            color: var(--vscode-foreground);
-            background: var(--vscode-editor-background);
-            overflow: hidden;
+            color: var(--fg-color);
+            background: var(--bg-color);
             height: 100vh;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
 
+        /* Toolbar */
         .toolbar {
             display: flex;
             align-items: center;
-            gap: 8px;
             padding: 6px 12px;
             background: var(--vscode-editorWidget-background);
             border-bottom: 1px solid var(--vscode-editorWidget-border);
             flex-shrink: 0;
+            gap: 8px;
         }
-
-                :root {
-                    --bg-color: var(--vscode-editor-background);
-                    --fg-color: var(--vscode-editor-foreground);
-                    --border-color: var(--vscode-panel-border);
-                    /* ING Corporate Colors */
-                    --primary-color: #FF6200; /* ING Orange */
-                    --primary-hover: #E55800;
-                    --header-bg: var(--vscode-editor-background);
-                    --row-hover: var(--vscode-list-hoverBackground);
-                    --row-alt: var(--vscode-editor-inactiveSelectionBackground);
-                }
-                body {
-                    font-family: var(--vscode-font-family);
-                    color: var(--fg-color);
-                    background-color: var(--bg-color);
-                    margin: 0;
-                    padding: 10px;
-                    display: flex;
-                    flex-direction: column;
-                    height: 100vh;
-                    box-sizing: border-box;
-                }
-                .toolbar {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    padding-bottom: 15px;
-                    border-bottom: 1px solid var(--border-color);
-                    margin-bottom: 15px;
-                }
-                .toolbar-left, .toolbar-right {
-                    display: flex;
-                    gap: 10px;
-                    align-items: center;
-                }
-                button {
-                    background-color: var(--primary-color);
-                    color: #FFFFFF;
-                    border: none;
-                    padding: 6px 14px;
-                    cursor: pointer;
-                    font-size: 13px;
-                    font-weight: 600;
-                    border-radius: 4px;
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    transition: background-color 0.2s;
-                }
-                button:hover {
-                    background-color: var(--primary-hover);
-                }
-                button:disabled {
-                    opacity: 0.5;
-                    cursor: not-allowed;
-                }
-                .btn-secondary {
-                    background-color: transparent;
-                    color: var(--fg-color);
-                    border: 1px solid var(--border-color);
-                }
-                .btn-secondary:hover {
-                    background-color: var(--row-hover);
-                }
-        .toolbar .separator {
-            width: 1px;
-            height: 20px;
-            background: var(--vscode-editorWidget-border);
-        }
-
-        .toolbar .info {
-            font-size: 11px;
-            color: var(--vscode-descriptionForeground);
+        .toolbar-right {
             display: flex;
+            gap: 10px;
             align-items: center;
-            gap: 6px;
+            margin-left: auto;
         }
-
-        .icon-btn {
-            background: transparent;
-            color: var(--vscode-foreground);
+        .toolbar .info { font-size: 11px; color: var(--vscode-descriptionForeground); }
+        
+        button.load-more-btn {
+            background-color: #333333;
+            color: #FFFFFF;
             border: none;
-            padding: 4px;
+            padding: 4px 12px;
             cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
             border-radius: 4px;
             display: flex;
             align-items: center;
-            justify-content: center;
-            width: 24px;
-            height: 24px;
+            gap: 6px;
+            transition: background-color 0.2s;
+        }
+        button.load-more-btn:hover:not(:disabled) {
+            background-color: #444444;
+        }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .icon-btn {
+            background: transparent; color: var(--fg-color); border: none; padding: 4px; border-radius: 4px;
+            cursor: pointer; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
             transition: background-color 0.2s, color 0.2s;
         }
-        .icon-btn:hover {
-            background: var(--vscode-toolbar-hoverBackground);
-            color: var(--primary-color);
+        .icon-btn:hover { background: var(--vscode-toolbar-hoverBackground); color: var(--primary-color); }
+        .icon-btn svg { width: 16px; height: 16px; fill: currentColor; }
+        
+        /* Filter Bar */
+        .filter-bar {
+            display: none; padding: 6px 12px; background: var(--vscode-editorWidget-background); border-bottom: 1px solid var(--vscode-editorWidget-border);
         }
-        .icon-btn svg {
-            width: 16px;
-            height: 16px;
-            fill: currentColor;
-        }
-
-        .grid-container {
-            flex: 1;
-            overflow: auto;
-            position: relative;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-        }
-
-        thead {
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
-
+        .filter-bar.show { display: flex; }
+        .filter-bar input { flex: 1; padding: 4px 8px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 3px; font-family: inherit; font-size: 12px; }
+        
+        /* Grid */
+        .grid-container { flex: 1; overflow: auto; position: relative; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
         th {
             background: var(--vscode-editorWidget-background);
             border: 1px solid var(--vscode-editorWidget-border);
             padding: 6px 10px;
             text-align: left;
             font-weight: 600;
-            white-space: nowrap;
-            cursor: pointer;
-            user-select: none;
-            color: var(--vscode-foreground);
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
-        th:hover {
-            background: var(--vscode-list-hoverBackground);
-        }
-        th.sort-asc::after { content: ' ▲'; opacity: 0.7; }
-        th.sort-desc::after { content: ' ▼'; opacity: 0.7; }
-
         td {
             border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.2));
             padding: 4px 10px;
@@ -312,27 +242,18 @@ class ResultsPanel {
             max-width: 400px;
             overflow: hidden;
             text-overflow: ellipsis;
+            cursor: default;
         }
+        tr:hover td { background: var(--vscode-list-hoverBackground); }
+        tr.selected td { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+        .null-value { color: var(--vscode-descriptionForeground); font-style: italic; }
+        .number-value { text-align: right; font-variant-numeric: tabular-nums; }
+        .row-number { color: var(--vscode-descriptionForeground); text-align: right; border-right: 2px solid var(--vscode-editorWidget-border); background: var(--vscode-editorWidget-background); position: sticky; left: 0; z-index: 5; min-width: 35px; padding-right: 8px; font-size: 11px; }
+        
+        th.sort-asc::after { content: ' ▲'; opacity: 0.7; }
+        th.sort-desc::after { content: ' ▼'; opacity: 0.7; }
 
-        tr:hover td {
-            background: var(--vscode-list-hoverBackground);
-        }
-
-        tr.selected td {
-            background: var(--vscode-list-activeSelectionBackground);
-            color: var(--vscode-list-activeSelectionForeground);
-        }
-
-        td.null-value {
-            color: var(--vscode-descriptionForeground);
-            font-style: italic;
-        }
-
-        td.number-value {
-            text-align: right;
-            font-variant-numeric: tabular-nums;
-        }
-
+        /* Status Bar */
         .status-bar {
             display: flex;
             align-items: center;
@@ -344,56 +265,25 @@ class ResultsPanel {
             flex-shrink: 0;
             border-top: 1px solid var(--vscode-statusBar-border);
         }
-
-        .row-number {
-            color: var(--vscode-descriptionForeground);
-            text-align: right;
-            min-width: 35px;
-            font-size: 11px;
-            padding-right: 8px;
-            border-right: 2px solid var(--vscode-editorWidget-border);
-        }
-
-        .filter-bar {
-            display: none;
-            padding: 6px 12px;
-            background: var(--vscode-editorWidget-background);
-            border-bottom: 1px solid var(--vscode-editorWidget-border);
-        }
-        .filter-bar.show { display: flex; gap: 8px; align-items: center; }
-        .filter-bar input {
-            flex: 1;
-            padding: 4px 8px;
-            background: var(--vscode-input-background);
-            color: var(--vscode-input-foreground);
-            border: 1px solid var(--vscode-input-border);
-            border-radius: 3px;
-            font-size: 12px;
-            font-family: inherit;
-        }
+        
     </style>
 </head>
 <body>
     <div class="toolbar">
         <span class="info" id="infoText"></span>
-        <button id="loadMoreBtn" onclick="postMsg({type:'loadMore'})" style="display: none; background: #333333; margin-left: 10px;">↓ Load More</button>
-        <div class="separator" style="margin-left: auto; background: transparent;"></div>
+        <button id="loadMoreBtn" class="load-more-btn" onclick="postMsg({type:'loadMore'})" style="display: none;"> ↓ Load More</button>
         <div class="toolbar-right">
             <button class="icon-btn" onclick="postMsg({ type: 'export' })" title="Export">
-                <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M14 6L14 14L2 14L2 6L4 6L4 12L12 12L12 6L14 6ZM8 10L11 7L9 7L9 2L7 2L7 7L5 7L8 10Z"/>
-                </svg>
+                <svg viewBox="0 0 16 16"><path d="M14 6L14 14L2 14L2 6L4 6L4 12L12 12L12 6L14 6ZM8 10L11 7L9 7L9 2L7 2L7 7L5 7L8 10Z"/></svg>
             </button>
             <button class="icon-btn" onclick="toggleFilter()" title="Filter">
-                <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M14.5 3L1.5 3L6.5 8.7L6.5 13L9.5 11.5L9.5 8.7L14.5 3ZM12.3 4L3.7 4L7.5 8.3L7.5 10.6L8.5 10.1L8.5 8.3L12.3 4Z"/>
-                </svg>
+                <svg viewBox="0 0 16 16"><path d="M14.5 3L1.5 3L6.5 8.7L6.5 13L9.5 11.5L9.5 8.7L14.5 3ZM12.3 4L3.7 4L7.5 8.3L7.5 10.6L8.5 10.1L8.5 8.3L12.3 4Z"/></svg>
             </button>
         </div>
     </div>
 
     <div class="filter-bar" id="filterBar">
-        <input type="text" id="filterInput" placeholder="Type to filter rows..." oninput="applyFilter()">
+        <input type="text" id="filterInput" placeholder="Type to filter rows locally..." oninput="applyFilter()">
     </div>
 
     <div class="grid-container" id="gridContainer">
@@ -406,7 +296,7 @@ class ResultsPanel {
     <div class="status-bar">
         <span id="statusRowCount"></span>
         <span id="statusExecTime"></span>
-        <span id="statusStatement"></span>
+        <span id="statusStatement" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px;"></span>
     </div>
 
     <script>
@@ -508,7 +398,7 @@ class ResultsPanel {
                         }
                     }
                     td.ondblclick = function() {
-                        postMsg({ type: 'copyCell', value: String(val ?? '') });
+                        vscode.postMessage({ type: 'copyCell', value: String(val ?? '') });
                     };
                     tr.appendChild(td);
                 }
@@ -532,7 +422,7 @@ class ResultsPanel {
                     msg.rowCount + ' rows' + (msg.hasMore ? '+' : '') +
                     ' • ' + msg.executionTime + 'ms';
                 document.getElementById('statusRowCount').textContent =
-                    'Rows: ' + msg.rowCount + (msg.hasMore ? ' (limited)' : '');
+                    'Rows: ' + msg.rowCount + (msg.hasMore ? '+' : '');
                 document.getElementById('statusExecTime').textContent =
                     'Time: ' + msg.executionTime + 'ms';
                 document.getElementById('statusStatement').textContent =
@@ -555,7 +445,7 @@ class ResultsPanel {
                     allRows.length + ' rows' + (msg.hasMore ? '+' : '') + ' • ' + timeStr;
                     
                 document.getElementById('statusRowCount').textContent =
-                    'Rows: ' + allRows.length + (msg.hasMore ? ' (limited)' : '');
+                    'Rows: ' + allRows.length + (msg.hasMore ? '+' : '');
                 
                 const loadBtn = document.getElementById('loadMoreBtn');
                 loadBtn.style.display = msg.hasMore ? 'inline-flex' : 'none';

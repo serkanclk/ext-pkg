@@ -171,7 +171,17 @@ class SqlWorksheetCommands {
         try {
             if (isQuery) {
                 const result = await this.oracleService.executeCursor(sql, binds);
-                this.resultsPanel.showResults(result);
+                const config = vscode.workspace.getConfiguration('ingSql');
+                const location = config.get('results.location', 'Panel');
+                if (location === 'Editor') {
+                    // We need access to getObjectViewer from extension.ts, or a way to create a generic data panel
+                    // For now, let's assume we can trigger a command or use a shared service.
+                    // Actually, let's create a temporary Result Grid Panel for these queries.
+                    vscode.commands.executeCommand('ingSql.showResultsInTab', result);
+                }
+                else {
+                    this.resultsPanel.showResults(result);
+                }
                 this.historyProvider.addEntry(sql, result.executionTime, result.rowCount);
             }
             else {
