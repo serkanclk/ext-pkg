@@ -53,6 +53,23 @@ class OracleService {
         }
         return OracleService.instance;
     }
+    static initializeThickMode() {
+        const config = vscode.workspace.getConfiguration('ingSql');
+        const clientPath = config.get('oracleClientPath');
+        if (clientPath && clientPath.trim() !== '') {
+            try {
+                oracledb_1.default.initOracleClient({ libDir: clientPath.trim() });
+                console.log(`Oracle Thick mode initialized successfully with libDir: ${clientPath}`);
+            }
+            catch (err) {
+                console.error('Failed to initialize Oracle Thick mode:', err);
+                vscode.window.showErrorMessage(`Failed to initialize Oracle Thick mode (Check your Oracle Client Path): ${err.message}`);
+            }
+        }
+        else {
+            console.log('Oracle Client Path not set. Falling back to Thin mode.');
+        }
+    }
     async getConnection(connectionName) {
         const connMgr = connectionManager_1.ConnectionManager.getInstance();
         const pool = connMgr.getConnection(connectionName);

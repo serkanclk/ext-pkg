@@ -49,7 +49,10 @@ const sqlWorksheet_1 = require("./commands/sqlWorksheet");
 const resultsPanel_1 = require("./panels/resultsPanel");
 const objectViewerPanel_1 = require("./panels/objectViewerPanel");
 function activate(context) {
-    console.log('ING SQL extension activating...');
+    console.log('ING SQL Developer extension is now active!');
+    // ─── Initialize Oracle Thick Mode ───
+    oracleService_1.OracleService.initializeThickMode();
+    // ─── Core Services Initialization ───
     const connMgr = connectionManager_1.ConnectionManager.initialize(context);
     const oracleService = oracleService_1.OracleService.getInstance();
     const exportService = exportService_1.ExportService.getInstance(context);

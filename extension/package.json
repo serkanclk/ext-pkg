@@ -385,6 +385,11 @@
             }
           }
         },
+        "ingSql.oracleClientPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Oracle Instant Client libraries (e.g., /opt/oracle/instantclient_21_13). Required for Thick mode connections."
+        },
         "ingSql.resultGrid.pageSize": {
           "type": "number",
           "default": 200,
