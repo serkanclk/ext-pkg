@@ -1,0 +1,468 @@
+{
+  "name": "ing-sql",
+  "displayName": "ING SQL",
+  "description": "ING SQL clone for VS Code with export audit logging",
+  "version": "0.1.0",
+  "publisher": "ing-sql",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "activationEvents": [
+    "*"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ingSql",
+          "title": "ING SQL",
+          "icon": "resources/icons/ing-sql.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "ingSqlPanel",
+          "title": "ING SQL",
+          "icon": "$(database)"
+        }
+      ]
+    },
+    "views": {
+      "ingSql": [
+        {
+          "id": "ingSql.objectBrowser",
+          "name": "Object Browser",
+          "icon": "resources/icons/database.svg"
+        },
+        {
+          "id": "ingSql.sqlHistory",
+          "name": "SQL History",
+          "icon": "$(history)"
+        }
+      ],
+      "ingSqlPanel": [
+        {
+          "type": "webview",
+          "id": "ingSql.resultsView",
+          "name": "Query Results",
+          "contextualTitle": "Query Results"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "ingSql.addConnection",
+        "title": "Add Connection",
+        "category": "Oracle",
+        "icon": "$(add)"
+      },
+      {
+        "command": "ingSql.removeConnection",
+        "title": "Remove Connection",
+        "category": "Oracle",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "ingSql.editConnection",
+        "title": "Edit Connection",
+        "category": "Oracle",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "ingSql.connect",
+        "title": "Connect",
+        "category": "Oracle",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "ingSql.disconnect",
+        "title": "Disconnect",
+        "category": "Oracle",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "ingSql.testConnection",
+        "title": "Test Connection",
+        "category": "Oracle"
+      },
+      {
+        "command": "ingSql.newSqlWorksheet",
+        "title": "New SQL Worksheet",
+        "category": "Oracle",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "ingSql.executeQuery",
+        "title": "Execute Statement",
+        "category": "Oracle",
+        "icon": "$(play)"
+      },
+      {
+        "command": "ingSql.executeScript",
+        "title": "Execute Script",
+        "category": "Oracle",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "ingSql.executeExplainPlan",
+        "title": "Explain Plan",
+        "category": "Oracle",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "ingSql.exportData",
+        "title": "Export Data...",
+        "category": "Oracle",
+        "icon": "$(export)"
+      },
+      {
+        "command": "ingSql.openData",
+        "title": "Open Data",
+        "category": "Oracle",
+        "icon": "$(table)"
+      },
+      {
+        "command": "ingSql.describeObject",
+        "title": "Describe",
+        "category": "Oracle",
+        "icon": "$(info)"
+      },
+      {
+        "command": "ingSql.generateSelect",
+        "title": "Generate SELECT Statement",
+        "category": "Oracle"
+      },
+      {
+        "command": "ingSql.refreshObjectBrowser",
+        "title": "Refresh",
+        "category": "Oracle",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ingSql.compileObject",
+        "title": "Compile",
+        "category": "Oracle",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "ingSql.dropObject",
+        "title": "Drop",
+        "category": "Oracle",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "ingSql.viewSource",
+        "title": "View Source",
+        "category": "Oracle",
+        "icon": "$(code)"
+      },
+      {
+        "command": "ingSql.clearSqlHistory",
+        "title": "Clear SQL History",
+        "category": "Oracle",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "ingSql.importData",
+        "title": "Import Data (CSV/XLSX)...",
+        "category": "Oracle",
+        "icon": "$(desktop-download)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "ingSql.addConnection",
+          "when": "view == ingSql.objectBrowser",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ingSql.refreshObjectBrowser",
+          "when": "view == ingSql.objectBrowser",
+          "group": "navigation@2"
+        },
+        {
+          "command": "ingSql.newSqlWorksheet",
+          "when": "view == ingSql.objectBrowser",
+          "group": "navigation@3"
+        },
+        {
+          "command": "ingSql.clearSqlHistory",
+          "when": "view == ingSql.sqlHistory",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "ingSql.connect",
+          "when": "view == ingSql.objectBrowser && viewItem == connection-disconnected",
+          "group": "inline@1"
+        },
+        {
+          "command": "ingSql.disconnect",
+          "when": "view == ingSql.objectBrowser && viewItem == connection-connected",
+          "group": "inline@1"
+        },
+        {
+          "command": "ingSql.newSqlWorksheet",
+          "when": "view == ingSql.objectBrowser && viewItem == connection-connected",
+          "group": "inline@2"
+        },
+        {
+          "command": "ingSql.newSqlWorksheet",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^(connection-connected|category|table|view|mview|index|sequence|synonym|dblink|trigger|procedure|function|package|type|column|constraint|grant|table-trigger|table-index)$/",
+          "group": "worksheet@1"
+        },
+        {
+          "command": "ingSql.editConnection",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^connection/",
+          "group": "connection@1"
+        },
+        {
+          "command": "ingSql.removeConnection",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^connection/",
+          "group": "connection@2"
+        },
+        {
+          "command": "ingSql.testConnection",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^connection/",
+          "group": "connection@3"
+        },
+        {
+          "command": "ingSql.importData",
+          "when": "view == ingSql.objectBrowser && viewItem == connection-connected",
+          "group": "connection@4"
+        },
+        {
+          "command": "ingSql.openData",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^(table|view|mview)$/",
+          "group": "data@1"
+        },
+        {
+          "command": "ingSql.exportData",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^(table|view|mview)$/",
+          "group": "data@2"
+        },
+        {
+          "command": "ingSql.describeObject",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^(table|view|mview|index|sequence|synonym|dblink|trigger)$/",
+          "group": "info@1"
+        },
+        {
+          "command": "ingSql.generateSelect",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^(table|view|mview)$/",
+          "group": "info@2"
+        },
+        {
+          "command": "ingSql.viewSource",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^(procedure|function|package|trigger|type)$/",
+          "group": "code@1"
+        },
+        {
+          "command": "ingSql.compileObject",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^(procedure|function|package|trigger|type)$/",
+          "group": "code@2"
+        },
+        {
+          "command": "ingSql.dropObject",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^(table|view|mview|index|sequence|procedure|function|package|trigger|type|synonym|dblink)$/",
+          "group": "danger@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "ingSql.executeQuery",
+          "when": "resourceLangId == oraclesql",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ingSql.executeScript",
+          "when": "resourceLangId == oraclesql",
+          "group": "navigation@2"
+        },
+        {
+          "command": "ingSql.executeExplainPlan",
+          "when": "resourceLangId == oraclesql",
+          "group": "navigation@3"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "oraclesql",
+        "aliases": [
+          "Oracle SQL",
+          "oraclesql",
+          "plsql"
+        ],
+        "extensions": [
+          ".osql",
+          ".plsql",
+          ".pls",
+          ".pck"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "oraclesql",
+        "scopeName": "source.oraclesql",
+        "path": "./syntaxes/oraclesql.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "ING SQL",
+      "properties": {
+        "ingSql.connections": {
+          "type": "array",
+          "default": [],
+          "description": "Saved connection profiles",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Connection name"
+              },
+              "host": {
+                "type": "string",
+                "description": "Database host"
+              },
+              "port": {
+                "type": "number",
+                "default": 1521,
+                "description": "Database port"
+              },
+              "serviceName": {
+                "type": "string",
+                "description": "Service name"
+              },
+              "sid": {
+                "type": "string",
+                "description": "SID (alternative to service name)"
+              },
+              "username": {
+                "type": "string",
+                "description": "Database username"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "default",
+                  "SYSDBA",
+                  "SYSOPER"
+                ],
+                "default": "default",
+                "description": "Connection role"
+              },
+              "color": {
+                "type": "string",
+                "description": "Color label for this connection"
+              },
+              "connectionType": {
+                "type": "string",
+                "enum": [
+                  "basic",
+                  "tns",
+                  "connectionString"
+                ],
+                "default": "basic"
+              },
+              "tnsAlias": {
+                "type": "string",
+                "description": "TNS alias (when connectionType is tns)"
+              },
+              "connectionString": {
+                "type": "string",
+                "description": "Full connection string (when connectionType is connectionString)"
+              }
+            }
+          }
+        },
+        "ingSql.resultGrid.pageSize": {
+          "type": "number",
+          "default": 200,
+          "description": "Number of rows to fetch per page in results grid"
+        },
+        "ingSql.resultGrid.maxRows": {
+          "type": "number",
+          "default": 200,
+          "description": "Maximum number of rows to fetch initially before requiring Load More"
+        },
+        "ingSql.resultGrid.nullDisplay": {
+          "type": "string",
+          "default": "(null)",
+          "description": "Display text for NULL values"
+        },
+        "ingSql.auditLog.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable export audit logging to API"
+        },
+        "ingSql.auditLog.apiEndpoint": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of the Audit API (e.g., https://api.ing.com). If empty, logging is disabled."
+        },
+        "ingSql.autoCommit": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-commit DML statements"
+        },
+        "ingSql.dbmsOutput.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable DBMS_OUTPUT capture"
+        },
+        "ingSql.dbmsOutput.bufferSize": {
+          "type": "number",
+          "default": 1000000,
+          "description": "DBMS_OUTPUT buffer size"
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "ingSql.executeQuery",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorTextFocus && resourceLangId == oraclesql"
+      },
+      {
+        "command": "ingSql.executeScript",
+        "key": "f5",
+        "when": "editorTextFocus && resourceLangId == oraclesql"
+      },
+      {
+        "command": "ingSql.executeExplainPlan",
+        "key": "f10",
+        "when": "editorTextFocus && resourceLangId == oraclesql"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "pretest": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "oracledb": "^6.3.0",
+    "exceljs": "^4.4.0"
+  }
+}

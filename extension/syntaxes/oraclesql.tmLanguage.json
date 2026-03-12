@@ -1,0 +1,155 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "Oracle SQL",
+    "scopeName": "source.oraclesql",
+    "patterns": [
+        {
+            "include": "#comments"
+        },
+        {
+            "include": "#strings"
+        },
+        {
+            "include": "#numbers"
+        },
+        {
+            "include": "#keywords"
+        },
+        {
+            "include": "#ddl"
+        },
+        {
+            "include": "#dml"
+        },
+        {
+            "include": "#plsql"
+        },
+        {
+            "include": "#functions"
+        },
+        {
+            "include": "#types"
+        },
+        {
+            "include": "#operators"
+        },
+        {
+            "include": "#variables"
+        }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.double-dash.oraclesql",
+                    "match": "--.*$"
+                },
+                {
+                    "name": "comment.block.oraclesql",
+                    "begin": "/\\*",
+                    "end": "\\*/"
+                }
+            ]
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "name": "string.quoted.single.oraclesql",
+                    "begin": "'",
+                    "end": "'",
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.oraclesql",
+                            "match": "''"
+                        }
+                    ]
+                },
+                {
+                    "name": "string.quoted.double.oraclesql",
+                    "begin": "\"",
+                    "end": "\""
+                }
+            ]
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.oraclesql",
+                    "match": "\\b\\d+(\\.\\d+)?\\b"
+                }
+            ]
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.oraclesql",
+                    "match": "(?i)\\b(SELECT|FROM|WHERE|AND|OR|NOT|IN|EXISTS|BETWEEN|LIKE|IS|NULL|AS|ON|JOIN|INNER|LEFT|RIGHT|FULL|OUTER|CROSS|NATURAL|USING|ORDER|BY|GROUP|HAVING|UNION|ALL|INTERSECT|MINUS|EXCEPT|DISTINCT|UNIQUE|INTO|VALUES|SET|WITH|RECURSIVE|FETCH|FIRST|NEXT|ROWS|ONLY|OFFSET|LIMIT|CASE|WHEN|THEN|ELSE|END|CONNECT|START|PRIOR|LEVEL|ROWNUM|ROWID|PIVOT|UNPIVOT|MODEL|PARTITION|OVER|WINDOW|RANGE|UNBOUNDED|PRECEDING|FOLLOWING|CURRENT|ROW|NULLS|LAST|ASC|DESC|ANY|SOME|FOR|UPDATE|OF|NOWAIT|WAIT|SKIP|LOCKED)\\b"
+                },
+                {
+                    "name": "constant.language.oraclesql",
+                    "match": "(?i)\\b(TRUE|FALSE|NULL|SYSDATE|SYSTIMESTAMP|USER|CURRENT_DATE|CURRENT_TIMESTAMP|SESSIONTIMEZONE|DBTIMEZONE)\\b"
+                }
+            ]
+        },
+        "ddl": {
+            "patterns": [
+                {
+                    "name": "keyword.other.ddl.oraclesql",
+                    "match": "(?i)\\b(CREATE|ALTER|DROP|TRUNCATE|RENAME|COMMENT|TABLE|VIEW|INDEX|SEQUENCE|TRIGGER|PROCEDURE|FUNCTION|PACKAGE|TYPE|BODY|SYNONYM|DATABASE|LINK|MATERIALIZED|TABLESPACE|SCHEMA|CONSTRAINT|PRIMARY|KEY|FOREIGN|REFERENCES|CHECK|UNIQUE|DEFAULT|NOT|NULL|CASCADE|RESTRICT|ADD|MODIFY|ENABLE|DISABLE|VALIDATE|NOVALIDATE|RELY|NORELY|INITIALLY|DEFERRED|IMMEDIATE|DEFERRABLE|STORAGE|PCTFREE|PCTUSED|INITRANS|MAXTRANS|LOGGING|NOLOGGING|PARALLEL|NOPARALLEL|COMPRESS|NOCOMPRESS|CACHE|NOCACHE|GLOBAL|TEMPORARY|PRESERVE|PURGE|RECYCLEBIN|FLASHBACK)\\b"
+                }
+            ]
+        },
+        "dml": {
+            "patterns": [
+                {
+                    "name": "keyword.other.dml.oraclesql",
+                    "match": "(?i)\\b(INSERT|UPDATE|DELETE|MERGE|COMMIT|ROLLBACK|SAVEPOINT|GRANT|REVOKE|LOCK|EXPLAIN|PLAN|ANALYZE|AUDIT|NOAUDIT)\\b"
+                }
+            ]
+        },
+        "plsql": {
+            "patterns": [
+                {
+                    "name": "keyword.control.plsql.oraclesql",
+                    "match": "(?i)\\b(DECLARE|BEGIN|END|EXCEPTION|RAISE|IF|THEN|ELSIF|ELSE|LOOP|WHILE|FOR|IN|REVERSE|EXIT|CONTINUE|RETURN|GOTO|OPEN|CLOSE|FETCH|CURSOR|BULK|COLLECT|FORALL|SAVE|EXCEPTIONS|EXECUTE|IMMEDIATE|USING|RETURNING|PIPE|PIPELINED|RESULT_CACHE|DETERMINISTIC|PARALLEL_ENABLE|AUTONOMOUS_TRANSACTION|PRAGMA|EXCEPTION_INIT|RESTRICT_REFERENCES|SERIALLY_REUSABLE|INLINE|AUTHID|CURRENT_USER|DEFINER|ACCESSIBLE|LANGUAGE|JAVA|NAME|EXTERNAL)\\b"
+                }
+            ]
+        },
+        "functions": {
+            "patterns": [
+                {
+                    "name": "support.function.oraclesql",
+                    "match": "(?i)\\b(NVL|NVL2|DECODE|COALESCE|NULLIF|GREATEST|GREATEST|LEAST|ABS|CEIL|FLOOR|MOD|POWER|ROUND|TRUNC|SIGN|SQRT|TO_CHAR|TO_DATE|TO_NUMBER|TO_TIMESTAMP|TO_CLOB|TO_BLOB|CAST|CONVERT|UPPER|LOWER|INITCAP|TRIM|LTRIM|RTRIM|LPAD|RPAD|SUBSTR|INSTR|REPLACE|TRANSLATE|LENGTH|CONCAT|ASCII|CHR|REVERSE|REGEXP_LIKE|REGEXP_REPLACE|REGEXP_SUBSTR|REGEXP_INSTR|REGEXP_COUNT|COUNT|SUM|AVG|MIN|MAX|MEDIAN|STDDEV|VARIANCE|LISTAGG|XMLAGG|DENSE_RANK|RANK|ROW_NUMBER|NTILE|LAG|LEAD|FIRST_VALUE|LAST_VALUE|NTH_VALUE|RATIO_TO_REPORT|CUME_DIST|PERCENT_RANK|PERCENTILE_CONT|PERCENTILE_DISC|ADD_MONTHS|MONTHS_BETWEEN|LAST_DAY|NEXT_DAY|EXTRACT|NUMTODSINTERVAL|NUMTOYMINTERVAL|SYS_CONTEXT|USERENV|DBMS_OUTPUT\\.PUT_LINE|UTL_FILE|DBMS_LOB|DBMS_SQL|DBMS_METADATA|DBMS_STATS|DBMS_SCHEDULER|DBMS_LOCK|DBMS_RANDOM|DBMS_CRYPTO|DBMS_XMLGEN|XMLTYPE|JSON_VALUE|JSON_QUERY|JSON_TABLE|JSON_OBJECT|JSON_ARRAY|JSON_EXISTS|JSON_ARRAYAGG|JSON_OBJECTAGG)\\b"
+                }
+            ]
+        },
+        "types": {
+            "patterns": [
+                {
+                    "name": "storage.type.oraclesql",
+                    "match": "(?i)\\b(VARCHAR2|NVARCHAR2|CHAR|NCHAR|NUMBER|INTEGER|INT|SMALLINT|FLOAT|BINARY_FLOAT|BINARY_DOUBLE|LONG|RAW|LONG\\s+RAW|DATE|TIMESTAMP|INTERVAL|YEAR|MONTH|DAY|SECOND|CLOB|NCLOB|BLOB|BFILE|XMLTYPE|SDO_GEOMETRY|BOOLEAN|PLS_INTEGER|BINARY_INTEGER|NATURAL|NATURALN|POSITIVE|POSITIVEN|SIGNTYPE|SIMPLE_INTEGER|SIMPLE_FLOAT|SIMPLE_DOUBLE|SYS_REFCURSOR|REF\\s+CURSOR|RECORD|VARRAY|TABLE|NESTED|OBJECT|JSON)\\b"
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.oraclesql",
+                    "match": "(\\+|\\-|\\*|\\/|\\|\\||:=|=>|!=|<>|>=|<=|>|<|=|%)"
+                }
+            ]
+        },
+        "variables": {
+            "patterns": [
+                {
+                    "name": "variable.parameter.oraclesql",
+                    "match": ":[a-zA-Z_][a-zA-Z0-9_]*"
+                },
+                {
+                    "name": "variable.other.oraclesql",
+                    "match": "&{1,2}[a-zA-Z_][a-zA-Z0-9_]*"
+                }
+            ]
+        }
+    }
+}
