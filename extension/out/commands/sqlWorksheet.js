@@ -144,6 +144,36 @@ class SqlWorksheetCommands {
             vscode.window.showErrorMessage(`Explain Plan error: ${err.message}`);
         }
     }
+    async toUpperCase() {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            return;
+        }
+        const selection = editor.selection;
+        const text = editor.document.getText(selection);
+        if (!text) {
+            return;
+        }
+        // SQL-Aware Uppercase: skip content inside single quotes
+        let upperText = '';
+        let inString = false;
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            if (char === "'") {
+                inString = !inString;
+                upperText += char;
+            }
+            else if (inString) {
+                upperText += char;
+            }
+            else {
+                upperText += char.toUpperCase();
+            }
+        }
+        await editor.edit(editBuilder => {
+            editBuilder.replace(selection, upperText);
+        });
+    }
     async executeSql(sql) {
         // Detect bind variables
         const bindVarRegex = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;

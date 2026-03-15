@@ -3,38 +3,36 @@ const fs = require('fs');
 const path = require('path');
 
 const targets = ['darwin-arm64', 'linux-x64'];
-const versions = ['full', 'restricted'];
+const builds = [
+    { name: 'Full', flags: '' },
+    { name: 'Full+Intellisense', flags: '--intellisense' },
+    { name: 'Restricted', flags: '--restricted' },
+    { name: 'Restricted+Intellisense', flags: '--restricted --intellisense' }
+];
 
 function runBuild() {
-    console.log('--- Starting Comprehensive Build for All Platforms ---');
+    console.log('--- Starting Comprehensive Build for All Platforms (1.0.0) ---');
 
-    for (const version of versions) {
-        console.log(`\n>>> Packaging ${version.toUpperCase()} version...`);
+    for (const build of builds) {
+        console.log(`\n>>> Packaging ${build.name.toUpperCase()} version...`);
 
         // Prepare environment
-        if (version === 'restricted') {
-            execSync('node scripts/prepare-restricted.js', { stdio: 'inherit' });
-        } else {
-            execSync('node scripts/prepare-full.js', { stdio: 'inherit' });
-        }
+        execSync(`node scripts/prepare.js ${build.flags}`, { stdio: 'inherit' });
 
         for (const target of targets) {
             console.log(`\n[*] Target: ${target}`);
             try {
                 // We use 'yes' to piping into the command to handle all (y/N) prompts
-                // Note: on Mac/Linux 'yes' is standard.
                 const cmd = `yes y | npx @vscode/vsce package --target ${target} --allow-star-activation`;
                 execSync(cmd, { stdio: 'inherit' });
             } catch (err) {
-                console.error(`[!] Failed to package ${version} for ${target}: ${err.message}`);
+                console.error(`[!] Failed to package ${build.name} for ${target}: ${err.message}`);
             }
         }
-
-        // Always restore full config after restricted build
-        if (version === 'restricted') {
-            execSync('node scripts/prepare-full.js', { stdio: 'inherit' });
-        }
     }
+
+    // Restore to full at the end
+    execSync('node scripts/prepare.js', { stdio: 'inherit' });
 
     console.log('\n--- Build Process Completed ---');
 }

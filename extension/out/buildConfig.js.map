@@ -1,1 +1,1 @@
-{"version":3,"file":"buildConfig.js","sourceRoot":"","sources":["../src/buildConfig.ts"],"names":[],"mappings":";;;AAAA;;;GAGG;AACU,QAAA,YAAY,GAAG;IACxB,YAAY,EAAE,KAAK;IACnB,aAAa,EAAE,EAAE;CACpB,CAAC"}
+{"version":3,"file":"buildConfig.js","sourceRoot":"","sources":["../src/buildConfig.ts"],"names":[],"mappings":";;;AAAA;;;GAGG;AACU,QAAA,YAAY,GAAG;IACxB,YAAY,EAAE,KAAK;IACnB,eAAe,EAAE,IAAI;IACrB,aAAa,EAAE,OAAO;CACzB,CAAC"}

@@ -36,6 +36,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SqlLanguageProvider = void 0;
 const vscode = __importStar(require("vscode"));
 const oracleService_1 = require("../services/oracleService");
+const buildConfig_1 = require("../buildConfig");
+let heavyData = null;
+if (buildConfig_1.BUILD_CONFIG.hasIntellisense) {
+    try {
+        heavyData = require('./intellisenseData').INTELLISENSE_DATA;
+    }
+    catch (e) {
+        console.error('Failed to load heavy intellisense data', e);
+    }
+}
 const ORACLE_KEYWORDS = [
     // SQL
     'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'EXISTS', 'BETWEEN', 'LIKE',
@@ -121,6 +131,16 @@ class SqlLanguageProvider {
                 const item = new vscode.CompletionItem(name, kind);
                 item.detail = `Oracle ${type}`;
                 items.push(item);
+            }
+        }
+        // Add heavy data if enabled
+        if (heavyData) {
+            for (const [type, names] of Object.entries(heavyData)) {
+                for (const name of names) {
+                    const item = new vscode.CompletionItem(name, vscode.CompletionItemKind.File);
+                    item.detail = `Intellisense Object (${type})`;
+                    items.push(item);
+                }
             }
         }
         return items;

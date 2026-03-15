@@ -1,7 +1,7 @@
 {
-  "name": "ing-sql-intl",
-  "displayName": "ING SQL + Intellisense",
-  "description": "ING Oracle SQL Developer (Full + Intellisense)",
+  "name": "ing-sql",
+  "displayName": "ING SQL",
+  "description": "Oracle SQL Developer for VS Code (ING Specific)",
   "version": "1.0.0",
   "publisher": "ing-sql",
   "engines": {

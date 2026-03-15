@@ -162,14 +162,12 @@ function activate(context) {
             }
         }
     }));
-    if (!buildConfig_1.BUILD_CONFIG.isRestricted) {
-        context.subscriptions.push(vscode.commands.registerCommand('ingSql.importData', async (item) => {
-            if (item?.connectionName) {
-                await importService.promptAndImport(item.connectionName);
-                objectBrowserProvider.refresh();
-            }
-        }));
-    }
+    context.subscriptions.push(vscode.commands.registerCommand('ingSql.importData', async (item) => {
+        if (item?.connectionName) {
+            await importService.promptAndImport(item.connectionName);
+            objectBrowserProvider.refresh();
+        }
+    }));
     context.subscriptions.push(vscode.commands.registerCommand('ingSql.disconnect', (item) => {
         if (item?.connectionName) {
             connMgr.disconnect(item.connectionName);
@@ -188,6 +186,8 @@ function activate(context) {
         sqlWorksheetCommands.executeScript();
     }), vscode.commands.registerCommand('ingSql.executeExplainPlan', () => {
         sqlWorksheetCommands.executeExplainPlan();
+    }), vscode.commands.registerCommand('ingSql.toUpperCase', () => {
+        sqlWorksheetCommands.toUpperCase();
     }));
     // Object Browser commands
     context.subscriptions.push(vscode.commands.registerCommand('ingSql.refreshObjectBrowser', () => {
