@@ -41,116 +41,115 @@ const vscode = __importStar(require("vscode"));
 const fs = __importStar(require("fs"));
 const exceljs_1 = __importDefault(require("exceljs"));
 const oracleService_1 = require("./oracleService");
+const importWizardPanel_1 = require("../panels/importWizardPanel");
 class ImportService {
     static instance;
-    static getInstance() {
+    context;
+    static getInstance(context) {
         if (!ImportService.instance) {
             ImportService.instance = new ImportService();
         }
+        if (context && !ImportService.instance.context) {
+            ImportService.instance.context = context;
+        }
         return ImportService.instance;
     }
+    /**
+     * Launch the import wizard and execute the import.
+     */
     async promptAndImport(connectionName, targetTable) {
-        // 1. Select File
-        const fileUris = await vscode.window.showOpenDialog({
-            canSelectMany: false,
-            openLabel: 'Import',
-            filters: {
-                'Data Files': ['csv', 'xlsx']
-            }
-        });
-        if (!fileUris || fileUris.length === 0) {
+        if (!this.context) {
+            vscode.window.showErrorMessage('ImportService not initialized with context.');
             return;
         }
-        const filePath = fileUris[0].fsPath;
-        const ext = filePath.split('.').pop()?.toLowerCase();
+        const wizard = new importWizardPanel_1.ImportWizardPanel(this.context.extensionUri);
+        const result = await wizard.show();
+        if (!result) {
+            return;
+        } // cancelled
         try {
-            vscode.window.showInformationMessage(`Parsing ${ext} file...`);
-            const data = ext === 'csv' ? await this.parseCsv(filePath) : await this.parseXlsx(filePath);
-            if (data.headers.length === 0 || data.rows.length === 0) {
-                vscode.window.showWarningMessage('File is empty or contains no readable data.');
-                return;
-            }
-            // 2. Select Target (skip if table was pre-selected via right-click)
-            let tableName = targetTable;
-            let isNewTable = false;
-            if (!tableName) {
-                const targetType = await vscode.window.showQuickPick(['Create New Table', 'Import into Existing Table'], { placeHolder: 'Select import destination' });
-                if (!targetType) {
-                    return;
-                }
-                isNewTable = targetType === 'Create New Table';
-                if (isNewTable) {
-                    const defaultName = filePath.split(/[\\/]/).pop()?.split('.')[0].replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() || 'NEW_TABLE';
-                    tableName = await vscode.window.showInputBox({
-                        prompt: 'Enter name for the new table',
-                        value: defaultName
-                    });
-                }
-                else {
-                    const tables = await oracleService_1.OracleService.getInstance().getSchemaObjects('TABLE', connectionName);
-                    const tableNames = tables.map(t => t.name);
-                    tableName = await vscode.window.showQuickPick(tableNames, { placeHolder: 'Select existing table' });
-                }
-            }
-            if (!tableName) {
-                return;
-            }
-            tableName = tableName.toUpperCase();
-            // 3. Execute Import
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
-                title: `Importing into ${tableName}...`,
+                title: `Importing into ${result.tableName}...`,
                 cancellable: false
             }, async (progress) => {
                 const oracleService = oracleService_1.OracleService.getInstance();
-                if (isNewTable) {
-                    progress.report({ message: 'Creating table...' });
-                    await this.createTable(tableName, data.headers, connectionName, oracleService);
-                }
+                const tableName = result.tableName.toUpperCase();
+                // 1. Re-parse the full file (not just preview rows)
+                progress.report({ message: 'Reading file...' });
+                const fullData = await this.parseFullFile(result);
+                // 2. Create the table
+                progress.report({ message: 'Creating table...' });
+                await this.createTableFromDefs(tableName, result.selectedColumns, connectionName, oracleService);
+                // 3. Insert data in batches
                 progress.report({ message: 'Inserting data...' });
-                const insertedCount = await this.insertData(tableName, data, connectionName, oracleService);
-                vscode.window.showInformationMessage(`Successfully imported ${insertedCount} rows into ${tableName}.`);
+                const insertedCount = await this.insertDataFromDefs(tableName, result.selectedColumns, result.headers, fullData.rows, result.importRowLimit, connectionName, oracleService, progress);
+                vscode.window.showInformationMessage(`Successfully imported ${insertedCount.toLocaleString()} rows into ${tableName}.`);
             });
         }
         catch (err) {
             vscode.window.showErrorMessage(`Import failed: ${err.message}`);
         }
     }
-    async parseCsv(filePath) {
+    /**
+     * Parse the full file (not limited by preview row limit).
+     */
+    async parseFullFile(result) {
+        const filePath = result.filePath;
+        const ext = filePath.split('.').pop()?.toLowerCase();
+        if (ext === 'xlsx') {
+            return this.parseXlsx(filePath, result.skipRows, result.hasHeader);
+        }
+        else {
+            return this.parseCsv(filePath, result.delimiter, result.leftEnclosure, result.skipRows, result.hasHeader);
+        }
+    }
+    async parseCsv(filePath, delimiter = ',', enclosure = '"', skipRows = 0, hasHeader = true) {
         const content = fs.readFileSync(filePath, 'utf-8');
         const lines = content.split(/\r?\n/).filter(l => l.trim().length > 0);
-        if (lines.length === 0)
-            return { headers: [], rows: [] };
-        // Basic CSV parsing (doesn't handle commas inside quotes perfectly, but good enough for basic use cases)
+        const delim = delimiter === '\\t' ? '\t' : delimiter;
+        const encl = enclosure === 'none' ? '' : enclosure;
         const parseLine = (line) => {
             const result = [];
             let inQuotes = false;
             let current = '';
             for (let i = 0; i < line.length; i++) {
-                const char = line[i];
-                if (char === '"')
+                const ch = line[i];
+                if (encl && ch === encl) {
                     inQuotes = !inQuotes;
-                else if (char === ',' && !inQuotes) {
+                }
+                else if (ch === delim && !inQuotes) {
                     result.push(current.trim());
                     current = '';
                 }
                 else {
-                    current += char;
+                    current += ch;
                 }
             }
             result.push(current.trim());
-            return result.map(val => {
-                if (val.startsWith('"') && val.endsWith('"')) {
-                    return val.substring(1, val.length - 1);
+            return result.map(v => {
+                if (encl && v.startsWith(encl) && v.endsWith(encl)) {
+                    return v.substring(1, v.length - 1);
                 }
-                return val;
+                return v;
             });
         };
-        const headers = parseLine(lines[0]).map(h => h.replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() || 'COL');
-        const rows = lines.slice(1).map(parseLine);
+        const dataLines = lines.slice(skipRows);
+        let headers = [];
+        let rows = [];
+        if (hasHeader && dataLines.length > 0) {
+            headers = parseLine(dataLines[0]).map((h, i) => h.replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() || `COL_${i + 1}`);
+            rows = dataLines.slice(1).map(parseLine);
+        }
+        else {
+            rows = dataLines.map(parseLine);
+            if (rows.length > 0) {
+                headers = rows[0].map((_, i) => `COL_${i + 1}`);
+            }
+        }
         return { headers, rows };
     }
-    async parseXlsx(filePath) {
+    async parseXlsx(filePath, skipRows = 0, hasHeader = true) {
         const workbook = new exceljs_1.default.Workbook();
         await workbook.xlsx.readFile(filePath);
         const worksheet = workbook.worksheets[0];
@@ -160,61 +159,104 @@ class ImportService {
         const headers = [];
         const rows = [];
         worksheet.eachRow((row, rowNumber) => {
-            const rowValues = row.values.slice(1); // exceljs is 1-indexed
-            if (rowNumber === 1) {
+            const rowValues = row.values.slice(1);
+            if (rowNumber <= skipRows)
+                return;
+            if (rowNumber === skipRows + 1 && hasHeader) {
                 rowValues.forEach((val, i) => {
-                    const h = val ? val.toString().replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() : `COL_${i}`;
+                    const h = val ? val.toString().replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() : `COL_${i + 1}`;
                     headers.push(h);
                 });
             }
             else {
-                // Map to headers length to ensure row matches header count
-                const cleanRow = headers.map((_, i) => {
+                const cleanRow = (hasHeader ? headers : rowValues).map((_, i) => {
                     const val = rowValues[i];
                     if (val === null || val === undefined)
                         return null;
                     if (typeof val === 'object' && val instanceof Date)
                         return val;
                     if (typeof val === 'object' && val.text)
-                        return val.text; // Hyperlinks
+                        return val.text;
                     return val.toString();
                 });
                 rows.push(cleanRow);
             }
         });
+        if (!hasHeader && rows.length > 0) {
+            for (let i = 0; i < rows[0].length; i++) {
+                headers.push(`COL_${i + 1}`);
+            }
+        }
         return { headers, rows };
     }
-    async createTable(tableName, headers, connectionName, oracleService) {
-        // Ensure unique column names and valid Oracle identifiers
-        const cleanHeaders = headers.map((h, i) => {
-            let ch = h;
-            if (/^[0-9]/.test(ch))
-                ch = 'C_' + ch;
-            if (ch.length > 30)
-                ch = ch.substring(0, 30); // 12c limit is 128, older is 30. Better safe.
-            return `"${ch}" VARCHAR2(4000)`; // Default to 4000 for safety
+    /**
+     * Create table using the column definitions from the wizard.
+     */
+    async createTableFromDefs(tableName, columns, connectionName, oracleService) {
+        const colDefs = columns.map(col => {
+            let name = col.name;
+            if (/^[0-9]/.test(name))
+                name = 'C_' + name;
+            if (name.length > 128)
+                name = name.substring(0, 128);
+            let typeDef = col.dataType;
+            if (['VARCHAR2', 'CHAR', 'NVARCHAR2', 'NCHAR'].includes(col.dataType)) {
+                typeDef = `${col.dataType}(${col.size || 4000})`;
+            }
+            else if (col.dataType === 'NUMBER' && col.size) {
+                typeDef = `NUMBER(${col.size})`;
+            }
+            let def = `"${name}" ${typeDef}`;
+            if (col.defaultValue) {
+                def += ` DEFAULT '${col.defaultValue.replace(/'/g, "''")}'`;
+            }
+            if (!col.nullable) {
+                def += ' NOT NULL';
+            }
+            return def;
         });
-        const sql = `CREATE TABLE "${tableName}" (\n  ${cleanHeaders.join(',\n  ')}\n)`;
+        const sql = `CREATE TABLE "${tableName}" (\n  ${colDefs.join(',\n  ')}\n)`;
         await oracleService.executeNonQuery(sql, {}, { connectionName, autoCommit: true });
+        // Add comments if any
+        for (const col of columns) {
+            if (col.comment) {
+                const commentSql = `COMMENT ON COLUMN "${tableName}"."${col.name}" IS '${col.comment.replace(/'/g, "''")}'`;
+                await oracleService.executeNonQuery(commentSql, {}, { connectionName, autoCommit: true });
+            }
+        }
     }
-    async insertData(tableName, data, connectionName, oracleService) {
+    /**
+     * Insert data using only the selected columns.
+     */
+    async insertDataFromDefs(tableName, columns, allHeaders, allRows, importRowLimit, connectionName, oracleService, progress) {
+        // Map selected columns to their indices in the source data
+        const colIndices = columns.map(col => allHeaders.indexOf(col.sourceName));
+        const colNames = columns.map(col => {
+            let name = col.name;
+            if (/^[0-9]/.test(name))
+                name = 'C_' + name;
+            if (name.length > 128)
+                name = name.substring(0, 128);
+            return `"${name}"`;
+        });
+        const bindNames = colNames.map((_, i) => `:${i + 1}`).join(', ');
+        const sql = `INSERT INTO "${tableName}" (${colNames.join(', ')}) VALUES (${bindNames})`;
+        let rows = allRows;
+        if (importRowLimit !== null && importRowLimit > 0) {
+            rows = rows.slice(0, importRowLimit);
+        }
         const batchSize = 500;
         let inserted = 0;
-        const cleanHeaders = data.headers.map(h => {
-            let ch = h;
-            if (/^[0-9]/.test(ch))
-                ch = 'C_' + ch;
-            if (ch.length > 30)
-                ch = ch.substring(0, 30);
-            return `"${ch}"`;
-        });
-        const bindNames = cleanHeaders.map((_, i) => `:${i + 1}`).join(', ');
-        const sql = `INSERT INTO "${tableName}" (${cleanHeaders.join(', ')}) VALUES (${bindNames})`;
-        // Insert in batches
-        for (let i = 0; i < data.rows.length; i += batchSize) {
-            const batch = data.rows.slice(i, i + batchSize);
+        for (let i = 0; i < rows.length; i += batchSize) {
+            const batch = rows.slice(i, i + batchSize).map(row => colIndices.map(idx => {
+                const val = idx >= 0 ? row[idx] : null;
+                if (val === null || val === undefined || val === '')
+                    return null;
+                return val;
+            }));
             await oracleService.executeMany(sql, batch, { connectionName, autoCommit: true });
             inserted += batch.length;
+            progress.report({ message: `Inserted ${inserted.toLocaleString()} of ${rows.length.toLocaleString()} rows...` });
         }
         return inserted;
     }

@@ -45,16 +45,25 @@ A professional Oracle SQL Developer clone for Visual Studio Code, optimized for 
 ## 🛡️ Audit Log Details
 The auditing system is hardcoded for maximum security. It records hostname, user, connection, format, and content metadata for every export. Logs are transmitted to `http://dwh-logger-api.athena.svc.cluster.local`.
 
-## 📦 Distribution Filenames (V2.2.1)
+## 📦 Distribution Filenames (V2.3.0)
 
 | Version | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
-| **Full** | `ing-sql-linux-x64-2.2.1.vsix` | `ing-sql-darwin-arm64-2.2.1.vsix` |
-| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.2.1.vsix` | `ing-sql-intl-darwin-arm64-2.2.1.vsix` |
-| **Restricted** | `ing-sql-restricted-linux-x64-2.2.1.vsix` | `ing-sql-restricted-darwin-arm64-2.2.1.vsix` |
-| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.2.1.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.2.1.vsix` |
+| **Full** | `ing-sql-linux-x64-2.3.0.vsix` | `ing-sql-darwin-arm64-2.3.0.vsix` |
+| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.3.0.vsix` | `ing-sql-intl-darwin-arm64-2.3.0.vsix` |
+| **Restricted** | `ing-sql-restricted-linux-x64-2.3.0.vsix` | `ing-sql-restricted-darwin-arm64-2.3.0.vsix` |
+| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.3.0.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.3.0.vsix` |
 
 ## 📋 Changelog
+
+### v2.3.0 — Data Import Wizard
+- **New**: Full 5-step import wizard matching Oracle SQL Developer's Data Import interface:
+  - Step 1: Data Preview — file selection, format/delimiter/enclosure/encoding configuration with live preview
+  - Step 2: Import Method — table name, import method, row limits
+  - Step 3: Choose Columns — ↔ column selector with reordering
+  - Step 4: Column Definition — per-column type, size, default, nullable, comment configuration
+  - Step 5: Import Summary — full review before executing
+- **Improved**: Table creation now uses proper Oracle data types (VARCHAR2, NUMBER, DATE, etc.) with sizes from wizard
 
 ### v2.2.1 — Export Timer
 - **New**: Live elapsed timer in the export progress notification (e.g., "Exported 150,000 rows... (12.3s)")

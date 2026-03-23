@@ -64,7 +64,7 @@ function activate(context) {
         const connMgr = connectionManager_1.ConnectionManager.initialize(context);
         const oracleService = oracleService_1.OracleService.getInstance();
         const exportService = exportService_1.ExportService.getInstance(context);
-        const importService = importService_1.ImportService.getInstance();
+        const importService = importService_1.ImportService.getInstance(context);
         const auditLogService = auditLogService_1.AuditLogService.getInstance();
         // ─── Initialize UI Components ───
         const objectBrowserProvider = new objectBrowserProvider_1.ObjectBrowserProvider();
