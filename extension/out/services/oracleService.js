@@ -40,8 +40,17 @@ exports.OracleService = void 0;
 const vscode = __importStar(require("vscode"));
 const oracledb_1 = __importDefault(require("oracledb"));
 const connectionManager_1 = require("./connectionManager");
-// Auto-fetch LOBs to avoid circular reference issues with streams
-oracledb_1.default.fetchAsString = [oracledb_1.default.CLOB];
+// Auto-fetch LOBs and date/timestamp types as strings.
+// Dates MUST be fetched as strings so Oracle applies NLS session formatting
+// (set via ALTER SESSION in applyNlsSettings). Without this, oracledb returns
+// native JS Date objects which bypass Oracle's NLS_DATE_FORMAT entirely.
+oracledb_1.default.fetchAsString = [
+    oracledb_1.default.CLOB,
+    oracledb_1.default.DB_TYPE_DATE,
+    oracledb_1.default.DB_TYPE_TIMESTAMP,
+    oracledb_1.default.DB_TYPE_TIMESTAMP_TZ,
+    oracledb_1.default.DB_TYPE_TIMESTAMP_LTZ
+];
 oracledb_1.default.fetchAsBuffer = [oracledb_1.default.BLOB];
 class OracleService {
     static instance;
@@ -86,6 +95,10 @@ class OracleService {
         await this.applyNlsSettings(conn);
         return conn;
     }
+    /** Public wrapper so WorksheetSessionManager can apply NLS once per session */
+    async applyNlsSettingsPublic(conn) {
+        await this.applyNlsSettings(conn);
+    }
     async applyNlsSettings(conn) {
         const config = vscode.workspace.getConfiguration('ingSql.nls');
         const language = config.get('language');
@@ -119,7 +132,7 @@ class OracleService {
         const start = Date.now();
         try {
             const config = vscode.workspace.getConfiguration('ingSql');
-            const maxRows = options.maxRows || config.get('resultGrid.maxRows', 10000);
+            const maxRows = options.maxRows || config.get('resultGrid.maxRows', 100);
             const result = await conn.execute(sql, binds, {
                 outFormat: oracledb_1.default.OUT_FORMAT_ARRAY,
                 maxRows: maxRows + 1, // fetch one extra to detect "has more"
@@ -152,11 +165,12 @@ class OracleService {
         }
     }
     async executeCursor(sql, binds = {}, options = {}) {
-        const conn = await this.getConnection(options.connectionName);
+        const isSessionConn = !!options.connection;
+        const conn = options.connection || await this.getConnection(options.connectionName);
         const start = Date.now();
         try {
             const config = vscode.workspace.getConfiguration('ingSql');
-            const batchSize = options.batchSize || config.get('resultGrid.maxRows', 10000);
+            const batchSize = options.batchSize || config.get('resultGrid.maxRows', 100);
             const result = await conn.execute(sql, binds, {
                 outFormat: oracledb_1.default.OUT_FORMAT_ARRAY,
                 resultSet: true,
@@ -180,21 +194,26 @@ class OracleService {
             const executionTime = Date.now() - start;
             if (hasMore) {
                 const cursorId = 'cursor_' + Math.random().toString(36).substring(2, 11);
-                OracleService.activeCursors.set(cursorId, { rs, conn, sql });
+                // For session connections, store rs but don't track conn (session manager owns it)
+                OracleService.activeCursors.set(cursorId, { rs, conn, sql, isSessionConn });
                 return {
                     columns, rows, rowCount: rows.length, statement: sql, executionTime, hasMore, cursorId
                 };
             }
             else {
                 await rs.close();
-                await conn.close();
+                if (!isSessionConn) {
+                    await conn.close();
+                }
                 return {
                     columns, rows, rowCount: rows.length, statement: sql, executionTime, hasMore: false
                 };
             }
         }
         catch (err) {
-            await conn.close();
+            if (!isSessionConn) {
+                await conn.close();
+            }
             throw err;
         }
     }
@@ -217,15 +236,19 @@ class OracleService {
                 await cursor.rs.close();
             }
             catch (e) { }
-            try {
-                await cursor.conn.close();
+            // Only close the connection if it's NOT a session-managed connection
+            if (!cursor.isSessionConn) {
+                try {
+                    await cursor.conn.close();
+                }
+                catch (e) { }
             }
-            catch (e) { }
             OracleService.activeCursors.delete(cursorId);
         }
     }
     async executeNonQuery(sql, binds = {}, options = {}) {
-        const conn = await this.getConnection(options.connectionName);
+        const isSessionConn = !!options.connection;
+        const conn = options.connection || await this.getConnection(options.connectionName);
         const start = Date.now();
         try {
             const config = vscode.workspace.getConfiguration('ingSql');
@@ -240,7 +263,9 @@ class OracleService {
             };
         }
         finally {
-            await conn.close();
+            if (!isSessionConn) {
+                await conn.close();
+            }
         }
     }
     async commit(connectionName) {

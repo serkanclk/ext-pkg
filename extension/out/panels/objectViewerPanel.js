@@ -121,7 +121,7 @@ class ObjectViewerPanel {
                 case 'loadMoreData':
                     if (this.currentCursorId) {
                         const config = vscode.workspace.getConfiguration('ingSql');
-                        const batchSize = config.get('resultGrid.maxRows', 200);
+                        const batchSize = config.get('resultGrid.maxRows', 100);
                         const { rows, hasMore } = await oracleService.fetchMoreRows(this.currentCursorId, batchSize);
                         const formattedRows = rows.map(row => row.map(val => Buffer.isBuffer(val) ? val.toString('hex').toUpperCase() : val));
                         this.panel?.webview.postMessage({
@@ -176,7 +176,7 @@ class ObjectViewerPanel {
                     const sql = `SELECT * FROM "${this.currentObjectName}"`;
                     // Fetch first chunk
                     const config = vscode.workspace.getConfiguration('ingSql');
-                    const batchSize = config.get('resultGrid.maxRows', 200);
+                    const batchSize = config.get('resultGrid.maxRows', 100);
                     const result = await oracleService.executeCursor(sql, {}, {
                         connectionName: this.currentConnectionName,
                         batchSize
@@ -751,16 +751,24 @@ class ObjectViewerPanel {
                 updateStatus('Dependencies loaded');
             }
             else if (msg.type === 'appendData') {
+                const MAX_BROWSER_ROWS = 10000;
                 dataRows = dataRows.concat(msg.rows);
                 dataFilteredRows = [...dataRows];
                 applyDataFilter();
                 
                 const timeStr = document.getElementById('statusExecTime').textContent.replace('Time: ', '').replace('ms', '');
-                updateDataInfo(dataRows.length, msg.hasMore, timeStr);
+                const atLimit = dataRows.length >= MAX_BROWSER_ROWS;
+                updateDataInfo(dataRows.length, atLimit ? false : msg.hasMore, timeStr);
                 
                 const btn = document.getElementById('loadMoreBtn');
-                btn.innerHTML = '↓ Load More';
-                btn.disabled = false;
+                if (atLimit) {
+                    btn.innerHTML = '⚠ Max rows (10,000) reached — use Export for full data';
+                    btn.disabled = true;
+                    btn.style.display = 'flex';
+                } else {
+                    btn.innerHTML = '↓ Load More';
+                    btn.disabled = false;
+                }
                 updateStatus('Additional rows loaded');
             }
         });

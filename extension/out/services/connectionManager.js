@@ -175,7 +175,7 @@ class ConnectionManager {
                 password: password,
                 connectString: connectString,
                 poolMin: 1,
-                poolMax: 4,
+                poolMax: 10,
                 poolIncrement: 1,
                 poolAlias: profileName,
             };

@@ -2,7 +2,7 @@
   "name": "ing-sql",
   "displayName": "ING SQL",
   "description": "Oracle SQL Developer for VS Code (ING Specific)",
-  "version": "1.0.0",
+  "version": "1.9.0",
   "publisher": "ing-sql",
   "engines": {
     "vscode": "^1.85.0"
@@ -140,9 +140,27 @@
       },
       {
         "command": "ingSql.toUpperCase",
-        "title": "Uppercase Selection",
+        "title": "Uppercase Selection (SQL-Aware)",
         "category": "Oracle",
         "icon": "$(case-sensitive)"
+      },
+      {
+        "command": "ingSql.toLowerCase",
+        "title": "Lowercase Selection (SQL-Aware)",
+        "category": "Oracle",
+        "icon": "$(case-sensitive)"
+      },
+      {
+        "command": "ingSql.describeObjectAtCursor",
+        "title": "Describe Object at Cursor",
+        "category": "Oracle",
+        "icon": "$(info)"
+      },
+      {
+        "command": "ingSql.showSqlHistory",
+        "title": "Show SQL History",
+        "category": "Oracle",
+        "icon": "$(history)"
       },
       {
         "command": "ingSql.generateSelect",
@@ -326,6 +344,11 @@
           "group": "data@1"
         },
         {
+          "command": "ingSql.importData",
+          "when": "view == ingSql.objectBrowser && viewItem == table",
+          "group": "data@2"
+        },
+        {
           "command": "ingSql.describeObject",
           "when": "view == ingSql.objectBrowser && viewItem =~ /^(table|view|mview|index|sequence|synonym|dblink|trigger)$/",
           "group": "info@1"
@@ -378,6 +401,7 @@
           "plsql"
         ],
         "extensions": [
+          ".sql",
           ".osql",
           ".plsql",
           ".pls",
@@ -492,6 +516,28 @@
       {
         "command": "ingSql.executeExplainPlan",
         "key": "f10",
+        "when": "editorTextFocus && resourceLangId == oraclesql"
+      },
+      {
+        "command": "ingSql.toLowerCase",
+        "key": "ctrl+shift+l",
+        "mac": "cmd+shift+l",
+        "when": "editorTextFocus && resourceLangId == oraclesql"
+      },
+      {
+        "command": "ingSql.describeObjectAtCursor",
+        "key": "shift+f4",
+        "when": "editorTextFocus && resourceLangId == oraclesql"
+      },
+      {
+        "command": "ingSql.showSqlHistory",
+        "key": "f8",
+        "when": "editorTextFocus && resourceLangId == oraclesql"
+      },
+      {
+        "command": "editor.action.formatDocument",
+        "key": "ctrl+f7",
+        "mac": "cmd+f7",
         "when": "editorTextFocus && resourceLangId == oraclesql"
       }
     ]

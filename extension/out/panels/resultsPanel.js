@@ -454,6 +454,7 @@ class ResultsPanel {
                 document.getElementById('loadMoreBtn').style.display = msg.hasMore ? 'inline-flex' : 'none';
                 renderTable();
             } else if (msg.type === 'appendData') {
+                const MAX_BROWSER_ROWS = 10000;
                 allRows = allRows.concat(msg.rows);
                 filteredRows = [...allRows];
                 if (document.getElementById('filterInput').value) {
@@ -464,16 +465,23 @@ class ResultsPanel {
                 
                 const oldText = document.getElementById('infoText').textContent;
                 const timeStr = oldText.split(' • ')[1];
+                const atLimit = allRows.length >= MAX_BROWSER_ROWS;
                 document.getElementById('infoText').textContent =
-                    allRows.length + ' rows' + (msg.hasMore ? '+' : '') + ' • ' + timeStr;
+                    allRows.length + ' rows' + (atLimit ? '' : (msg.hasMore ? '+' : '')) + ' • ' + timeStr;
                     
                 document.getElementById('statusRowCount').textContent =
-                    'Rows: ' + allRows.length + (msg.hasMore ? '+' : '');
+                    'Rows: ' + allRows.length + (atLimit ? '' : (msg.hasMore ? '+' : ''));
                 
                 const loadBtn = document.getElementById('loadMoreBtn');
-                loadBtn.style.display = msg.hasMore ? 'inline-flex' : 'none';
-                loadBtn.textContent = '↓ Load More';
-                loadBtn.disabled = false;
+                if (atLimit) {
+                    loadBtn.style.display = 'inline-flex';
+                    loadBtn.textContent = '⚠ Max rows (10,000) reached — use Export for full data';
+                    loadBtn.disabled = true;
+                } else {
+                    loadBtn.style.display = msg.hasMore ? 'inline-flex' : 'none';
+                    loadBtn.textContent = '↓ Load More';
+                    loadBtn.disabled = false;
+                }
             } else if (msg.type === 'loadingMore') {
                 const loadBtn = document.getElementById('loadMoreBtn');
                 loadBtn.textContent = msg.loading ? 'Loading...' : '↓ Load More';

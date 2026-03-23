@@ -37,23 +37,26 @@ exports.SqlWorksheetCommands = void 0;
 const vscode = __importStar(require("vscode"));
 const oracleService_1 = require("../services/oracleService");
 const connectionManager_1 = require("../services/connectionManager");
+const worksheetSessionManager_js_1 = require("../services/worksheetSessionManager.js");
 class SqlWorksheetCommands {
     context;
     oracleService;
     connMgr;
     resultsPanel;
     historyProvider;
-    constructor(context, resultsPanel, historyProvider) {
+    statusBar;
+    constructor(context, resultsPanel, historyProvider, statusBar) {
         this.context = context;
         this.oracleService = oracleService_1.OracleService.getInstance();
         this.connMgr = connectionManager_1.ConnectionManager.getInstance();
         this.resultsPanel = resultsPanel;
         this.historyProvider = historyProvider;
+        this.statusBar = statusBar;
         this.resultsPanel.setLoadMoreHandler(async (cursorId) => {
             try {
                 this.resultsPanel.setLoadingMore(true);
                 const config = vscode.workspace.getConfiguration('ingSql');
-                const batchSize = config.get('resultGrid.maxRows', 10000);
+                const batchSize = config.get('resultGrid.maxRows', 100);
                 const { rows, hasMore } = await this.oracleService.fetchMoreRows(cursorId, batchSize);
                 this.resultsPanel.appendResults(rows, hasMore);
             }
@@ -154,17 +157,79 @@ class SqlWorksheetCommands {
         if (!text) {
             return;
         }
-        // SQL-Aware Uppercase: skip content inside single quotes
+        // SQL-Aware Uppercase (single O(n) pass):
+        // Preserves original case inside:
+        //   - Single-quoted strings:  'hello world'
+        //   - Double-quoted identifiers: "myColumn"
+        //   - Line comments:  -- this stays as-is
+        //   - Block comments: /* this stays as-is */
         let upperText = '';
-        let inString = false;
+        let inSingleQuote = false;
+        let inDoubleQuote = false;
+        let inLineComment = false;
+        let inBlockComment = false;
         for (let i = 0; i < text.length; i++) {
             const char = text[i];
+            const nextChar = text[i + 1];
+            // --- Block comment end ---
+            if (inBlockComment) {
+                upperText += char;
+                if (char === '*' && nextChar === '/') {
+                    upperText += '/';
+                    i++;
+                    inBlockComment = false;
+                }
+                continue;
+            }
+            // --- Line comment end ---
+            if (inLineComment) {
+                upperText += char;
+                if (char === '\n') {
+                    inLineComment = false;
+                }
+                continue;
+            }
+            // --- Single-quoted string ---
+            if (inSingleQuote) {
+                upperText += char;
+                if (char === "'") {
+                    // Handle escaped quotes (''): stay in string
+                    if (nextChar === "'") {
+                        upperText += "'";
+                        i++;
+                    }
+                    else {
+                        inSingleQuote = false;
+                    }
+                }
+                continue;
+            }
+            // --- Double-quoted identifier ---
+            if (inDoubleQuote) {
+                upperText += char;
+                if (char === '"') {
+                    inDoubleQuote = false;
+                }
+                continue;
+            }
+            // --- Detect start of preserved regions ---
             if (char === "'") {
-                inString = !inString;
+                inSingleQuote = true;
                 upperText += char;
             }
-            else if (inString) {
+            else if (char === '"') {
+                inDoubleQuote = true;
                 upperText += char;
+            }
+            else if (char === '-' && nextChar === '-') {
+                inLineComment = true;
+                upperText += '--';
+                i++;
+            }
+            else if (char === '/' && nextChar === '*') {
+                inBlockComment = true;
+                upperText += '/*';
+                i++;
             }
             else {
                 upperText += char.toUpperCase();
@@ -174,7 +239,115 @@ class SqlWorksheetCommands {
             editBuilder.replace(selection, upperText);
         });
     }
+    async toLowerCase() {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            return;
+        }
+        const selection = editor.selection;
+        const text = editor.document.getText(selection);
+        if (!text) {
+            return;
+        }
+        // SQL-Aware Lowercase (single O(n) pass):
+        // Same preservation rules as toUpperCase
+        let lowerText = '';
+        let inSingleQuote = false;
+        let inDoubleQuote = false;
+        let inLineComment = false;
+        let inBlockComment = false;
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            const nextChar = text[i + 1];
+            if (inBlockComment) {
+                lowerText += char;
+                if (char === '*' && nextChar === '/') {
+                    lowerText += '/';
+                    i++;
+                    inBlockComment = false;
+                }
+                continue;
+            }
+            if (inLineComment) {
+                lowerText += char;
+                if (char === '\n') {
+                    inLineComment = false;
+                }
+                continue;
+            }
+            if (inSingleQuote) {
+                lowerText += char;
+                if (char === "'") {
+                    if (nextChar === "'") {
+                        lowerText += "'";
+                        i++;
+                    }
+                    else {
+                        inSingleQuote = false;
+                    }
+                }
+                continue;
+            }
+            if (inDoubleQuote) {
+                lowerText += char;
+                if (char === '"') {
+                    inDoubleQuote = false;
+                }
+                continue;
+            }
+            if (char === "'") {
+                inSingleQuote = true;
+                lowerText += char;
+            }
+            else if (char === '"') {
+                inDoubleQuote = true;
+                lowerText += char;
+            }
+            else if (char === '-' && nextChar === '-') {
+                inLineComment = true;
+                lowerText += '--';
+                i++;
+            }
+            else if (char === '/' && nextChar === '*') {
+                inBlockComment = true;
+                lowerText += '/*';
+                i++;
+            }
+            else {
+                lowerText += char.toLowerCase();
+            }
+        }
+        await editor.edit(editBuilder => {
+            editBuilder.replace(selection, lowerText);
+        });
+    }
+    async describeObjectAtCursor() {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            return;
+        }
+        if (!this.connMgr.getActiveConnectionName()) {
+            vscode.window.showWarningMessage('No active connection. Please connect first.');
+            return;
+        }
+        // Get word under cursor (handles schema.object notation)
+        const position = editor.selection.active;
+        const wordRange = editor.document.getWordRangeAtPosition(position, /[A-Za-z_][A-Za-z0-9_$#]*/);
+        if (!wordRange) {
+            vscode.window.showWarningMessage('No object name found at cursor.');
+            return;
+        }
+        const objectName = editor.document.getText(wordRange).toUpperCase();
+        const connectionName = this.connMgr.getActiveConnectionName();
+        // Fire the describe command with a synthetic tree item
+        const { OracleTreeItem } = await import('../models/treeItems.js');
+        const dummyItem = new OracleTreeItem(objectName, 'table', (await import('vscode')).TreeItemCollapsibleState.None, connectionName, undefined, objectName);
+        vscode.commands.executeCommand('ingSql.describeObject', dummyItem);
+    }
     async executeSql(sql) {
+        // Strip trailing semicolons and PL/SQL '/' terminators
+        // Oracle's programmatic API doesn't accept these (SQL*Plus convention only)
+        sql = sql.replace(/[;\s/]+$/, '').trim();
         // Detect bind variables
         const bindVarRegex = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
         const bindNames = [];
@@ -198,30 +371,51 @@ class SqlWorksheetCommands {
             }
         }
         const isQuery = /^\s*(SELECT|WITH)\s/i.test(sql);
+        this.statusBar.showRunning();
+        // Get dedicated session connection for this worksheet
+        const editor = vscode.window.activeTextEditor;
+        const docUri = editor?.document.uri.toString();
+        const sessionMgr = worksheetSessionManager_js_1.WorksheetSessionManager.getInstance();
+        let sessionConn;
+        try {
+            if (docUri) {
+                sessionConn = await sessionMgr.getSessionConnection(docUri);
+            }
+        }
+        catch (err) {
+            this.statusBar.showError(err.message, 0);
+            vscode.window.showErrorMessage(`Session Error: ${err.message}`);
+            return;
+        }
         try {
             if (isQuery) {
-                const result = await this.oracleService.executeCursor(sql, binds);
+                const result = await this.oracleService.executeCursor(sql, binds, {
+                    connection: sessionConn
+                });
                 const config = vscode.workspace.getConfiguration('ingSql');
                 const location = config.get('results.location', 'Panel');
                 if (location === 'Editor') {
-                    // We need access to getObjectViewer from extension.ts, or a way to create a generic data panel
-                    // For now, let's assume we can trigger a command or use a shared service.
-                    // Actually, let's create a temporary Result Grid Panel for these queries.
                     vscode.commands.executeCommand('ingSql.showResultsInTab', result);
                 }
                 else {
                     this.resultsPanel.showResults(result);
                 }
                 this.historyProvider.addEntry(sql, result.executionTime, result.rowCount);
+                this.statusBar.showSuccess(result.rowCount, result.executionTime);
             }
             else {
-                const result = await this.oracleService.executeNonQuery(sql, binds);
+                const result = await this.oracleService.executeNonQuery(sql, binds, {
+                    connection: sessionConn
+                });
                 vscode.window.showInformationMessage(`${result.rowsAffected} row(s) affected. (${result.executionTime}ms)`);
                 this.historyProvider.addEntry(sql, result.executionTime, result.rowsAffected);
+                this.statusBar.showSuccess(result.rowsAffected, result.executionTime);
             }
         }
         catch (err) {
+            const elapsed = Date.now() - this.statusBar['startTime'] || 0;
             this.historyProvider.addEntry(sql, 0, 0, err.message);
+            this.statusBar.showError(err.message, elapsed);
             vscode.window.showErrorMessage(`SQL Error: ${err.message}`);
         }
     }

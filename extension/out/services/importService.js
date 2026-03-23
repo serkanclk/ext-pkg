@@ -49,7 +49,7 @@ class ImportService {
         }
         return ImportService.instance;
     }
-    async promptAndImport(connectionName) {
+    async promptAndImport(connectionName, targetTable) {
         // 1. Select File
         const fileUris = await vscode.window.showOpenDialog({
             canSelectMany: false,
@@ -67,28 +67,30 @@ class ImportService {
             vscode.window.showInformationMessage(`Parsing ${ext} file...`);
             const data = ext === 'csv' ? await this.parseCsv(filePath) : await this.parseXlsx(filePath);
             if (data.headers.length === 0 || data.rows.length === 0) {
-                vscode.window.showWarningMessage('File is empty or contains no readable dat.');
+                vscode.window.showWarningMessage('File is empty or contains no readable data.');
                 return;
             }
-            // 2. Select Target (New or Existing Table)
-            const targetType = await vscode.window.showQuickPick(['Create New Table', 'Import into Existing Table'], { placeHolder: 'Select import destination' });
-            if (!targetType) {
-                return;
-            }
-            const isNewTable = targetType === 'Create New Table';
-            let tableName;
-            if (isNewTable) {
-                const defaultName = filePath.split(/[\\/]/).pop()?.split('.')[0].replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() || 'NEW_TABLE';
-                tableName = await vscode.window.showInputBox({
-                    prompt: 'Enter name for the new table',
-                    value: defaultName
-                });
-            }
-            else {
-                // Get existing tables
-                const tables = await oracleService_1.OracleService.getInstance().getSchemaObjects('TABLE', connectionName);
-                const tableNames = tables.map(t => t.name);
-                tableName = await vscode.window.showQuickPick(tableNames, { placeHolder: 'Select existing table' });
+            // 2. Select Target (skip if table was pre-selected via right-click)
+            let tableName = targetTable;
+            let isNewTable = false;
+            if (!tableName) {
+                const targetType = await vscode.window.showQuickPick(['Create New Table', 'Import into Existing Table'], { placeHolder: 'Select import destination' });
+                if (!targetType) {
+                    return;
+                }
+                isNewTable = targetType === 'Create New Table';
+                if (isNewTable) {
+                    const defaultName = filePath.split(/[\\/]/).pop()?.split('.')[0].replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() || 'NEW_TABLE';
+                    tableName = await vscode.window.showInputBox({
+                        prompt: 'Enter name for the new table',
+                        value: defaultName
+                    });
+                }
+                else {
+                    const tables = await oracleService_1.OracleService.getInstance().getSchemaObjects('TABLE', connectionName);
+                    const tableNames = tables.map(t => t.name);
+                    tableName = await vscode.window.showQuickPick(tableNames, { placeHolder: 'Select existing table' });
+                }
             }
             if (!tableName) {
                 return;

@@ -12,7 +12,9 @@ const hasIntellisense = args.includes('--intellisense');
 function prepare() {
     console.log(`--- Preparing Build: Restricted=${isRestricted}, Intellisense=${hasIntellisense} ---`);
 
-    // 0. Backup or Restore package.json
+    // 0. Backup original package.json (only if no backup exists yet).
+    // package-all.js deletes the backup before each full build cycle
+    // so the first prepare call captures the current canonical version.
     if (!fs.existsSync(packageJsonBackupPath)) {
         fs.copyFileSync(packageJsonPath, packageJsonBackupPath);
         console.log('✓ package.json backed up');

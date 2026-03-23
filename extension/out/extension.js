@@ -52,6 +52,8 @@ const objectViewerPanel_1 = require("./panels/objectViewerPanel");
 const snippetEditorPanel_1 = require("./panels/snippetEditorPanel");
 const treeItems_1 = require("./models/treeItems");
 const buildConfig_1 = require("./buildConfig");
+const sqlStatusBar_1 = require("./ui/sqlStatusBar");
+const worksheetSessionManager_1 = require("./services/worksheetSessionManager");
 function activate(context) {
     vscode.window.showInformationMessage('ING SQL Developer extension is activating...');
     console.log('ING SQL Developer extension is now active!');
@@ -71,7 +73,10 @@ function activate(context) {
     const sqlSnippetsProvider = new sqlSnippetsProvider_1.SqlSnippetsProvider(context);
     const resultsPanel = new resultsPanel_1.ResultsPanel(context.extensionUri);
     const snippetEditorPanel = new snippetEditorPanel_1.SnippetEditorPanel(context.extensionUri);
-    const sqlWorksheetCommands = new sqlWorksheet_1.SqlWorksheetCommands(context, resultsPanel, sqlHistoryProvider);
+    const sqlStatusBar = new sqlStatusBar_1.SqlStatusBar();
+    context.subscriptions.push({ dispose: () => sqlStatusBar.dispose() });
+    sqlStatusBar.showReady();
+    const sqlWorksheetCommands = new sqlWorksheet_1.SqlWorksheetCommands(context, resultsPanel, sqlHistoryProvider, sqlStatusBar);
     // ─── Object Viewer Management ───
     const objectViewers = new Map();
     function getObjectViewer(objectName, connectionName) {
@@ -164,7 +169,9 @@ function activate(context) {
     }));
     context.subscriptions.push(vscode.commands.registerCommand('ingSql.importData', async (item) => {
         if (item?.connectionName) {
-            await importService.promptAndImport(item.connectionName);
+            // If invoked from a table node, pre-select the table name
+            const targetTable = (item.objectType === 'table') ? item.objectName : undefined;
+            await importService.promptAndImport(item.connectionName, targetTable);
             objectBrowserProvider.refresh();
         }
     }));
@@ -188,6 +195,12 @@ function activate(context) {
         sqlWorksheetCommands.executeExplainPlan();
     }), vscode.commands.registerCommand('ingSql.toUpperCase', () => {
         sqlWorksheetCommands.toUpperCase();
+    }), vscode.commands.registerCommand('ingSql.toLowerCase', () => {
+        sqlWorksheetCommands.toLowerCase();
+    }), vscode.commands.registerCommand('ingSql.describeObjectAtCursor', () => {
+        sqlWorksheetCommands.describeObjectAtCursor();
+    }), vscode.commands.registerCommand('ingSql.showSqlHistory', () => {
+        vscode.commands.executeCommand('ingSql.sqlHistoryView.focus');
     }));
     // Object Browser commands
     context.subscriptions.push(vscode.commands.registerCommand('ingSql.refreshObjectBrowser', () => {
@@ -309,7 +322,94 @@ function activate(context) {
         quickPick.show();
     }), vscode.commands.registerCommand('ingSql.about', () => {
         const mode = oracleService_1.OracleService.isThickMode() ? 'Thick' : 'Thin';
-        vscode.window.showInformationMessage(`ING SQL Developer v0.1.0 - Mode: ${mode}`);
+        const pkg = require('../package.json');
+        const panel = vscode.window.createWebviewPanel('ingSqlAbout', 'About ING SQL', vscode.ViewColumn.One, { enableScripts: false });
+        panel.webview.html = /*html*/ `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About ING SQL</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
+            color: var(--vscode-foreground);
+            background: var(--vscode-editor-background);
+            padding: 32px 48px;
+            line-height: 1.6;
+        }
+        .header { display: flex; align-items: center; gap: 16px; margin-bottom: 32px; padding-bottom: 16px; border-bottom: 2px solid #FF6200; }
+        .header h1 { font-size: 28px; font-weight: 700; }
+        .header .version { font-size: 14px; color: var(--vscode-descriptionForeground); }
+        .header .mode { display: inline-block; padding: 2px 10px; border-radius: 12px; background: ${mode === 'Thick' ? '#2ea043' : '#db6d28'}; color: white; font-size: 11px; font-weight: 600; }
+        .logo { width: 48px; height: 48px; border-radius: 8px; background: #FF6200; display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; font-size: 20px; }
+        h2 { font-size: 18px; margin: 24px 0 12px; color: #FF6200; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+        th { text-align: left; padding: 8px 12px; background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-editorWidget-border); font-weight: 600; font-size: 12px; }
+        td { padding: 6px 12px; border: 1px solid var(--vscode-editorWidget-border); font-size: 13px; }
+        kbd { display: inline-block; padding: 2px 8px; background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-editorWidget-border); border-radius: 4px; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; box-shadow: 0 1px 0 var(--vscode-editorWidget-border); }
+        .section { margin-bottom: 16px; }
+        .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--vscode-editorWidget-border); font-size: 12px; color: var(--vscode-descriptionForeground); }
+        .tip { background: var(--vscode-editorWidget-background); border-left: 3px solid #FF6200; padding: 8px 16px; margin: 12px 0; font-size: 13px; border-radius: 0 4px 4px 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">ING</div>
+        <div>
+            <h1>ING SQL Developer</h1>
+            <span class="version">v${pkg.version}</span> &nbsp;
+            <span class="mode">${mode} Mode</span>
+        </div>
+    </div>
+
+    <h2>⌨️ Keyboard Shortcuts</h2>
+    <table>
+        <tr><th>Shortcut (Mac)</th><th>Shortcut (Win/Linux)</th><th>Action</th></tr>
+        <tr><td><kbd>⌘</kbd> + <kbd>Enter</kbd></td><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Execute Statement at Cursor</td></tr>
+        <tr><td><kbd>F5</kbd></td><td><kbd>F5</kbd></td><td>Execute Script (all statements)</td></tr>
+        <tr><td><kbd>F10</kbd></td><td><kbd>F10</kbd></td><td>Explain Plan</td></tr>
+        <tr><td><kbd>⇧</kbd> + <kbd>F4</kbd></td><td><kbd>Shift</kbd> + <kbd>F4</kbd></td><td>Describe Object at Cursor</td></tr>
+        <tr><td><kbd>F8</kbd></td><td><kbd>F8</kbd></td><td>Show SQL History</td></tr>
+        <tr><td><kbd>⌘</kbd> + <kbd>F7</kbd></td><td><kbd>Ctrl</kbd> + <kbd>F7</kbd></td><td>Format SQL</td></tr>
+        <tr><td><kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>U</kbd></td><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>U</kbd></td><td>SQL-Aware Uppercase</td></tr>
+        <tr><td><kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>L</kbd></td><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>L</kbd></td><td>SQL-Aware Lowercase</td></tr>
+        <tr><td><kbd>⌘</kbd> + <kbd>/</kbd></td><td><kbd>Ctrl</kbd> + <kbd>/</kbd></td><td>Toggle Line Comment (--)</td></tr>
+        <tr><td><kbd>⌥</kbd> + <kbd>F10</kbd></td><td><kbd>Alt</kbd> + <kbd>F10</kbd></td><td>New SQL Worksheet</td></tr>
+    </table>
+
+    <div class="tip">
+        💡 <strong>SQL-Aware Case Change</strong>: Uppercase/Lowercase commands intelligently preserve text inside string literals (<code>'...'</code>), double-quoted identifiers (<code>"..."</code>), line comments (<code>--</code>), and block comments (<code>/* ... */</code>).
+    </div>
+
+    <h2>🚀 Features</h2>
+    <div class="section">
+        <table>
+            <tr><th>Feature</th><th>Description</th></tr>
+            <tr><td>🌲 Object Browser</td><td>Browse tables, views, procedures, functions, packages, sequences, and more</td></tr>
+            <tr><td>📊 Results Grid</td><td>Interactive grid with sorting, filtering, and "Load More" pagination</td></tr>
+            <tr><td>📝 SQL Worksheet</td><td>Full SQL & PL/SQL support with syntax highlighting</td></tr>
+            <tr><td>📋 SQL History</td><td>Persistent history of all executed queries</td></tr>
+            <tr><td>📥 Data Import</td><td>Import CSV/XLSX files directly into Oracle tables</td></tr>
+            <tr><td>📤 Data Export</td><td>Export query results to CSV, Excel, or JSON</td></tr>
+            <tr><td>🔍 Explain Plan</td><td>View execution plans for SQL statements</td></tr>
+            <tr><td>📜 SQL Snippets</td><td>Save and reuse frequently used SQL templates</td></tr>
+            <tr><td>🔌 Thick Mode</td><td>Oracle Instant Client for enhanced security (NNE)</td></tr>
+            <tr><td>🛡️ Audit Logging</td><td>All exports logged to centralized audit API</td></tr>
+        </table>
+    </div>
+
+    <h2>📂 Supported File Types</h2>
+    <div class="section">
+        <code>.sql</code>, <code>.osql</code>, <code>.plsql</code>, <code>.pls</code>, <code>.pck</code>
+    </div>
+
+    <div class="footer">
+        Developed by the <strong>Athena DWH Team</strong> &nbsp;|&nbsp; Oracle Mode: <strong>${mode}</strong>
+    </div>
+</body>
+</html>`;
     }), vscode.commands.registerCommand('ingSql.generateSelect', async (item) => {
         if (!item?.objectName || !item.connectionName) {
             return;
@@ -476,19 +576,15 @@ function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand('ingSql.clearSqlHistory', () => {
         sqlHistoryProvider.clear();
     }), vscode.commands.registerCommand('ingSql.insertSqlFromHistory', async (sql) => {
-        const editor = vscode.window.activeTextEditor;
-        if (editor) {
-            await editor.edit(edit => {
-                edit.insert(editor.selection.active, sql);
-            });
-        }
-        else {
-            const doc = await vscode.workspace.openTextDocument({
-                language: 'oraclesql',
-                content: sql + '\n'
-            });
-            await vscode.window.showTextDocument(doc);
-        }
+        const connLabel = connectionManager_1.ConnectionManager.getInstance().getActiveConnectionName();
+        const header = connLabel
+            ? `-- SQL from History [${connLabel}]\n`
+            : `-- SQL from History\n`;
+        const doc = await vscode.workspace.openTextDocument({
+            language: 'oraclesql',
+            content: header + `-- ${new Date().toLocaleString()}\n\n` + sql + '\n'
+        });
+        await vscode.window.showTextDocument(doc, { preview: false });
     }));
     // ─── Status Bar ───
     const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -517,6 +613,7 @@ function activate(context) {
     console.log('ING SQL extension activated successfully.');
 }
 function deactivate() {
-    // Cleanup handled by disposables
+    // Release all worksheet sessions to avoid connection leaks
+    worksheetSessionManager_1.WorksheetSessionManager.getInstance().dispose();
 }
 //# sourceMappingURL=extension.js.map

@@ -83,7 +83,7 @@ class SqlHistoryProvider {
             // Click to insert SQL into active editor
             item.command = {
                 command: 'ingSql.insertSqlFromHistory',
-                title: 'Insert SQL',
+                title: 'Open in New Worksheet',
                 arguments: [entry.sql]
             };
             return item;
