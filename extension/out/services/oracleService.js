@@ -369,15 +369,21 @@ class OracleService {
     async getAccessibleSchemas(connectionName) {
         const conn = await this.getConnection(connectionName);
         try {
+            // Using ALL_USERS instead of ALL_OBJECTS for massive performance gain.
+            // ALL_OBJECTS forces permission evaluation on millions of DB rows.
             const sql = `
-                SELECT DISTINCT OWNER
-                FROM ALL_OBJECTS
-                WHERE OWNER != USER
-                AND OWNER NOT IN ('SYS','SYSTEM','DBSNMP','OUTLN','XDB','WMSYS',
-                    'CTXSYS','MDSYS','ORDDATA','ORDSYS','OLAPSYS','EXFSYS',
-                    'APPQOSSYS','DBSFWUSER','GSMADMIN_INTERNAL','LBACSYS',
-                    'OJVMSYS','DVF','DVSYS','AUDSYS','REMOTE_SCHEDULER_AGENT')
-                ORDER BY OWNER
+                SELECT USERNAME
+                FROM ALL_USERS
+                WHERE USERNAME != USER
+                AND USERNAME NOT IN (
+                    'SYS', 'SYSTEM', 'DBSNMP', 'OUTLN', 'XDB', 'WMSYS', 'CTXSYS', 'MDSYS', 
+                    'ORDDATA', 'ORDSYS', 'OLAPSYS', 'EXFSYS', 'APPQOSSYS', 'DBSFWUSER', 
+                    'GSMADMIN_INTERNAL', 'LBACSYS', 'OJVMSYS', 'DVF', 'DVSYS', 'AUDSYS', 
+                    'REMOTE_SCHEDULER_AGENT', 'ORACLE_OCM', 'DIP', 'ANONYMOUS', 'XS$NULL', 
+                    'OICSA', 'GGSYS', 'GSMCATUSER', 'MDDATA', 'SYSBACKUP', 'SYSDG', 
+                    'SYSKM', 'SYSMAC', 'SYS$UMF', 'C##CJD', 'GSMUSER'
+                )
+                ORDER BY USERNAME
             `;
             const result = await conn.execute(sql, {}, {
                 outFormat: oracledb_1.default.OUT_FORMAT_ARRAY
