@@ -258,6 +258,57 @@ class OracleService {
             OracleService.activeCursors.delete(cursorId);
         }
     }
+    /**
+     * Stream query results in batches for export.
+     * Instead of accumulating all rows in memory, this calls onBatch() for each chunk,
+     * allowing the caller to write directly to file and discard the batch.
+     * Returns the total number of rows streamed.
+     */
+    async executeExportStream(sql, connectionName, batchSize, onColumns, onBatch, isCancelled) {
+        const conn = await this.getConnection(connectionName);
+        try {
+            const result = await conn.execute(sql, {}, {
+                outFormat: oracledb_1.default.OUT_FORMAT_ARRAY,
+                resultSet: true,
+                prefetchRows: batchSize,
+            });
+            if (!result.resultSet) {
+                throw new Error('Query did not return a ResultSet.');
+            }
+            const rs = result.resultSet;
+            const columns = (result.metaData || []).map(m => ({
+                name: m.name,
+                dbType: this.getDbTypeName(m.dbType),
+                nullable: m.nullable !== false,
+                byteSize: m.byteSize,
+                precision: m.precision,
+                scale: m.scale,
+            }));
+            onColumns(columns);
+            let totalRows = 0;
+            let batchNum = 0;
+            while (true) {
+                if (isCancelled?.()) {
+                    break;
+                }
+                const rows = (await rs.getRows(batchSize));
+                if (rows.length === 0) {
+                    break;
+                }
+                batchNum++;
+                totalRows += rows.length;
+                await onBatch(rows, batchNum, totalRows);
+                if (rows.length < batchSize) {
+                    break; // Last batch
+                }
+            }
+            await rs.close();
+            return totalRows;
+        }
+        finally {
+            await conn.close();
+        }
+    }
     async executeNonQuery(sql, binds = {}, options = {}) {
         const isSessionConn = !!options.connection;
         const conn = options.connection || await this.getConnection(options.connectionName);

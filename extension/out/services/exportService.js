@@ -39,6 +39,7 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const oracleService_1 = require("./oracleService");
 const exportPanel_1 = require("../panels/exportPanel");
+const EXPORT_BATCH_SIZE = 10000;
 class ExportService {
     static instance;
     context;
@@ -63,78 +64,36 @@ class ExportService {
             const exportPanel = new exportPanel_1.ExportPanel(this.context.extensionUri);
             const userOptions = await exportPanel.show();
             if (!userOptions || !userOptions.format || !userOptions.filePath) {
-                // User cancelled or didn't supply required configs
                 return undefined;
             }
             format = userOptions.format;
             filePath = userOptions.filePath;
         }
         const start = Date.now();
-        let finalColumns = options.columns || [];
-        let finalRows = options.rows || [];
         try {
+            let totalRows;
             if (options.statement && options.connectionName) {
-                await vscode.window.withProgress({
-                    location: vscode.ProgressLocation.Notification,
-                    title: `Exporting data...`,
-                    cancellable: true
-                }, async (progress, token) => {
-                    progress.report({ message: 'Initializing export cursor...', increment: 0 });
-                    const oracleService = oracleService_1.OracleService.getInstance();
-                    const cursorResult = await oracleService.executeCursor(options.statement, {}, {
-                        connectionName: options.connectionName,
-                        batchSize: 5000 // Fetch larger chunks for export speed
-                    });
-                    finalColumns = cursorResult.columns;
-                    let hasMore = cursorResult.hasMore;
-                    let cursorId = cursorResult.cursorId;
-                    finalRows = [...cursorResult.rows];
-                    let fetchedCount = finalRows.length;
-                    progress.report({ message: `Fetched ${fetchedCount} rows...` });
-                    while (hasMore && cursorId) {
-                        if (token.isCancellationRequested) {
-                            if (cursorId) {
-                                await oracleService.closeCursor(cursorId);
-                            }
-                            throw new Error("Export cancelled by user.");
-                        }
-                        const moreData = await oracleService.fetchMoreRows(cursorId, 5000);
-                        finalRows.push(...moreData.rows);
-                        fetchedCount += moreData.rows.length;
-                        hasMore = moreData.hasMore;
-                        progress.report({ message: `Fetched ${fetchedCount} rows...` });
-                    }
-                });
+                // ── Streaming export from database ──
+                totalRows = await this.streamingExport(format, filePath, options.statement, options.connectionName, options.tableName);
             }
-            switch (format) {
-                case 'csv':
-                    await this.exportCsv(filePath, finalColumns, finalRows);
-                    break;
-                case 'xlsx':
-                    await this.exportXlsx(filePath, finalColumns, finalRows, options.tableName);
-                    break;
-                case 'json':
-                    await this.exportJson(filePath, finalColumns, finalRows);
-                    break;
-                case 'xml':
-                    await this.exportXml(filePath, finalColumns, finalRows, options.tableName);
-                    break;
-                case 'sql':
-                    await this.exportSql(filePath, finalColumns, finalRows, options.tableName || 'TABLE_NAME');
-                    break;
-                case 'html':
-                    await this.exportHtml(filePath, finalColumns, finalRows, options.tableName);
-                    break;
+            else if (options.columns && options.rows) {
+                // ── In-memory export (small result sets from grid) ──
+                await this.writeFormat(format, filePath, options.columns, options.rows, options.tableName);
+                totalRows = options.rows.length;
+            }
+            else {
+                vscode.window.showErrorMessage('Export requires either a SQL statement or data.');
+                return undefined;
             }
             const stats = fs.statSync(filePath);
             const result = {
                 filePath,
-                rowCount: finalRows.length,
+                rowCount: totalRows,
                 fileSize: stats.size,
                 format,
                 durationMs: Date.now() - start,
             };
-            vscode.window.showInformationMessage(`Exported ${result.rowCount} rows to ${path.basename(filePath)} (${this.formatFileSize(result.fileSize)})`, 'Open File').then(choice => {
+            vscode.window.showInformationMessage(`Exported ${result.rowCount.toLocaleString()} rows to ${path.basename(filePath)} (${this.formatFileSize(result.fileSize)}) in ${(result.durationMs / 1000).toFixed(1)}s`, 'Open File').then(choice => {
                 if (choice === 'Open File') {
                     vscode.env.openExternal(vscode.Uri.file(filePath));
                 }
@@ -142,106 +101,240 @@ class ExportService {
             return result;
         }
         catch (err) {
-            vscode.window.showErrorMessage(`Export failed: ${err.message}`);
+            if (err.message !== 'Export cancelled by user.') {
+                vscode.window.showErrorMessage(`Export failed: ${err.message}`);
+            }
             throw err;
         }
     }
-    async exportCsv(filePath, columns, rows) {
-        const lines = [];
-        // Header
-        lines.push(columns.map(c => this.csvEscape(c.name)).join(','));
-        // Data rows
-        for (const row of rows) {
-            lines.push(row.map(val => this.csvEscape(this.formatValue(val))).join(','));
-        }
-        fs.writeFileSync(filePath, '\ufeff' + lines.join('\n'), 'utf-8'); // BOM for Excel
-    }
-    async exportXlsx(filePath, columns, rows, sheetName) {
-        const ExcelJS = require('exceljs');
-        const workbook = new ExcelJS.Workbook();
-        workbook.creator = 'ING SQL for VS Code';
-        workbook.created = new Date();
-        const sheet = workbook.addWorksheet(sheetName || 'Data');
-        // Header row
-        sheet.columns = columns.map(col => ({
-            header: col.name,
-            key: col.name,
-            width: Math.max(col.name.length + 2, 12),
-        }));
-        // Style header
-        const headerRow = sheet.getRow(1);
-        headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-        headerRow.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FF4472C4' }
-        };
-        headerRow.border = {
-            bottom: { style: 'medium', color: { argb: 'FF2F528F' } }
-        };
-        // Data rows
-        for (const row of rows) {
-            const rowData = {};
-            columns.forEach((col, idx) => {
-                rowData[col.name] = row[idx];
-            });
-            sheet.addRow(rowData);
-        }
-        // Alternate row colors
-        for (let i = 2; i <= rows.length + 1; i++) {
-            if (i % 2 === 0) {
-                const r = sheet.getRow(i);
-                r.fill = {
-                    type: 'pattern',
-                    pattern: 'solid',
-                    fgColor: { argb: 'FFF2F2F2' }
-                };
+    // ─────────────────────────────────────────────────────────────────────
+    // Streaming export — fetch batches from Oracle, write directly to file
+    // ─────────────────────────────────────────────────────────────────────
+    async streamingExport(format, filePath, sql, connectionName, tableName) {
+        return await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: 'Exporting data...',
+            cancellable: true
+        }, async (progress, token) => {
+            const oracleService = oracleService_1.OracleService.getInstance();
+            let columns = [];
+            const stream = fs.createWriteStream(filePath, { encoding: 'utf-8' });
+            let isFirstBatch = true;
+            let writer;
+            const exportStart = Date.now();
+            progress.report({ message: 'Initializing export cursor...' });
+            try {
+                const totalRows = await oracleService.executeExportStream(sql, connectionName, EXPORT_BATCH_SIZE, (cols) => {
+                    columns = cols;
+                    writer = this.createStreamWriter(format, stream, columns, tableName);
+                    writer.writeHeader();
+                }, async (rows, batchNum, totalSoFar) => {
+                    if (isFirstBatch) {
+                        isFirstBatch = false;
+                    }
+                    writer.writeBatch(rows);
+                    const elapsed = ((Date.now() - exportStart) / 1000).toFixed(1);
+                    progress.report({
+                        message: `Exported ${totalSoFar.toLocaleString()} rows... (${elapsed}s)`
+                    });
+                }, () => token.isCancellationRequested);
+                if (token.isCancellationRequested) {
+                    stream.end();
+                    // Clean up partial file
+                    try {
+                        fs.unlinkSync(filePath);
+                    }
+                    catch { }
+                    throw new Error('Export cancelled by user.');
+                }
+                // Write footer/closing tags
+                if (writer) {
+                    writer.writeFooter(totalRows);
+                }
+                // Wait for stream to finish
+                await new Promise((resolve, reject) => {
+                    stream.end(() => resolve());
+                    stream.on('error', reject);
+                });
+                return totalRows;
             }
-        }
-        // Auto-filter
-        if (rows.length > 0) {
-            sheet.autoFilter = {
-                from: { row: 1, column: 1 },
-                to: { row: rows.length + 1, column: columns.length }
-            };
-        }
-        await workbook.xlsx.writeFile(filePath);
+            catch (err) {
+                stream.end();
+                throw err;
+            }
+        });
     }
-    async exportJson(filePath, columns, rows) {
-        const data = rows.map(row => {
+    // For XLSX which needs its own streaming API, we handle it specially
+    createStreamWriter(format, stream, columns, tableName) {
+        switch (format) {
+            case 'csv': return new CsvStreamWriter(stream, columns);
+            case 'json': return new JsonStreamWriter(stream, columns);
+            case 'xml': return new XmlStreamWriter(stream, columns, tableName);
+            case 'sql': return new SqlStreamWriter(stream, columns, tableName || 'TABLE_NAME');
+            case 'html': return new HtmlStreamWriter(stream, columns, tableName);
+            case 'xlsx': return new XlsxStreamWriter(stream, columns, tableName);
+            default: return new CsvStreamWriter(stream, columns);
+        }
+    }
+    // ─────────────────────────────────────────────
+    // In-memory write (for small result-grid exports)
+    // ─────────────────────────────────────────────
+    async writeFormat(format, filePath, columns, rows, tableName) {
+        const stream = fs.createWriteStream(filePath, { encoding: 'utf-8' });
+        const writer = this.createStreamWriter(format, stream, columns, tableName);
+        writer.writeHeader();
+        writer.writeBatch(rows);
+        writer.writeFooter(rows.length);
+        await new Promise((resolve, reject) => {
+            stream.end(() => resolve());
+            stream.on('error', reject);
+        });
+    }
+    formatFileSize(bytes) {
+        if (bytes < 1024) {
+            return bytes + ' B';
+        }
+        if (bytes < 1024 * 1024) {
+            return (bytes / 1024).toFixed(1) + ' KB';
+        }
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+}
+exports.ExportService = ExportService;
+function formatValue(val) {
+    if (val === null || val === undefined) {
+        return '';
+    }
+    if (val instanceof Date) {
+        return val.toISOString();
+    }
+    if (Buffer.isBuffer(val)) {
+        return val.toString('base64');
+    }
+    return String(val);
+}
+function csvEscape(value) {
+    if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+        return '"' + value.replace(/"/g, '""') + '"';
+    }
+    return value;
+}
+function xmlEscape(value) {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+}
+function htmlEscape(value) {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+// ── CSV ──
+class CsvStreamWriter {
+    stream;
+    columns;
+    constructor(stream, columns) {
+        this.stream = stream;
+        this.columns = columns;
+    }
+    writeHeader() {
+        // BOM for Excel compatibility
+        this.stream.write('\ufeff');
+        this.stream.write(this.columns.map(c => csvEscape(c.name)).join(',') + '\n');
+    }
+    writeBatch(rows) {
+        const buf = [];
+        for (const row of rows) {
+            buf.push(row.map(val => csvEscape(formatValue(val))).join(','));
+        }
+        this.stream.write(buf.join('\n') + '\n');
+    }
+    writeFooter() { }
+}
+// ── JSON ──
+class JsonStreamWriter {
+    stream;
+    columns;
+    isFirst = true;
+    constructor(stream, columns) {
+        this.stream = stream;
+        this.columns = columns;
+    }
+    writeHeader() {
+        this.stream.write('[\n');
+    }
+    writeBatch(rows) {
+        for (const row of rows) {
             const obj = {};
-            columns.forEach((col, idx) => {
+            this.columns.forEach((col, idx) => {
                 obj[col.name] = row[idx];
             });
-            return obj;
-        });
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
-    }
-    async exportXml(filePath, columns, rows, rootName) {
-        const root = rootName || 'DATA';
-        let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
-        xml += `<${root}>\n`;
-        for (const row of rows) {
-            xml += '  <ROW>\n';
-            columns.forEach((col, idx) => {
-                const val = row[idx];
-                const escaped = this.xmlEscape(this.formatValue(val));
-                xml += `    <${col.name}>${escaped}</${col.name}>\n`;
-            });
-            xml += '  </ROW>\n';
+            if (!this.isFirst) {
+                this.stream.write(',\n');
+            }
+            this.stream.write('  ' + JSON.stringify(obj));
+            this.isFirst = false;
         }
-        xml += `</${root}>\n`;
-        fs.writeFileSync(filePath, xml, 'utf-8');
     }
-    async exportSql(filePath, columns, rows, tableName) {
-        const lines = [];
-        const colNames = columns.map(c => c.name).join(', ');
+    writeFooter() {
+        this.stream.write('\n]\n');
+    }
+}
+// ── XML ──
+class XmlStreamWriter {
+    stream;
+    columns;
+    root;
+    constructor(stream, columns, tableName) {
+        this.stream = stream;
+        this.columns = columns;
+        this.root = tableName || 'DATA';
+    }
+    writeHeader() {
+        this.stream.write('<?xml version="1.0" encoding="UTF-8"?>\n');
+        this.stream.write(`<${this.root}>\n`);
+    }
+    writeBatch(rows) {
+        const buf = [];
+        for (const row of rows) {
+            buf.push('  <ROW>');
+            this.columns.forEach((col, idx) => {
+                const val = row[idx];
+                const escaped = xmlEscape(formatValue(val));
+                buf.push(`    <${col.name}>${escaped}</${col.name}>`);
+            });
+            buf.push('  </ROW>');
+        }
+        this.stream.write(buf.join('\n') + '\n');
+    }
+    writeFooter() {
+        this.stream.write(`</${this.root}>\n`);
+    }
+}
+// ── SQL (INSERT statements) ──
+class SqlStreamWriter {
+    stream;
+    columns;
+    tableName;
+    constructor(stream, columns, tableName) {
+        this.stream = stream;
+        this.columns = columns;
+        this.tableName = tableName;
+    }
+    writeHeader() { }
+    writeBatch(rows) {
+        const colNames = this.columns.map(c => c.name).join(', ');
+        const buf = [];
         for (const row of rows) {
             const values = row.map((val, idx) => {
                 if (val === null || val === undefined) {
                     return 'NULL';
                 }
-                const col = columns[idx];
+                const col = this.columns[idx];
                 if (['NUMBER', 'BINARY_FLOAT', 'BINARY_DOUBLE', 'FLOAT', 'INTEGER'].includes(col.dbType)) {
                     return String(val);
                 }
@@ -250,19 +343,31 @@ class ExportService {
                 }
                 return `'${String(val).replace(/'/g, "''")}'`;
             });
-            lines.push(`INSERT INTO ${tableName} (${colNames}) VALUES (${values.join(', ')});`);
+            buf.push(`INSERT INTO ${this.tableName} (${colNames}) VALUES (${values.join(', ')});`);
         }
-        // Add COMMIT at the end
-        lines.push('');
-        lines.push('COMMIT;');
-        fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
+        this.stream.write(buf.join('\n') + '\n');
     }
-    async exportHtml(filePath, columns, rows, title) {
-        let html = `<!DOCTYPE html>
+    writeFooter() {
+        this.stream.write('\nCOMMIT;\n');
+    }
+}
+// ── HTML ──
+class HtmlStreamWriter {
+    stream;
+    columns;
+    title;
+    constructor(stream, columns, title) {
+        this.stream = stream;
+        this.columns = columns;
+        this.title = title;
+    }
+    writeHeader() {
+        const title = this.title || 'Data Export';
+        this.stream.write(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>${title || 'Export'}</title>
+<title>${title}</title>
 <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background: #f5f5f5; }
     h1 { color: #333; font-size: 18px; margin-bottom: 16px; }
@@ -277,73 +382,105 @@ class ExportService {
 </style>
 </head>
 <body>
-<h1>${title || 'Data Export'}</h1>
+<h1>${title}</h1>
 <table>
-<thead><tr>`;
-        for (const col of columns) {
-            html += `<th>${this.htmlEscape(col.name)}</th>`;
+<thead><tr>`);
+        for (const col of this.columns) {
+            this.stream.write(`<th>${htmlEscape(col.name)}</th>`);
         }
-        html += '</tr></thead>\n<tbody>\n';
+        this.stream.write('</tr></thead>\n<tbody>\n');
+    }
+    writeBatch(rows) {
+        const buf = [];
         for (const row of rows) {
-            html += '<tr>';
+            buf.push('<tr>');
             for (const val of row) {
                 if (val === null || val === undefined) {
-                    html += '<td class="null">(null)</td>';
+                    buf.push('<td class="null">(null)</td>');
                 }
                 else {
-                    html += `<td>${this.htmlEscape(String(val))}</td>`;
+                    buf.push(`<td>${htmlEscape(String(val))}</td>`);
                 }
             }
-            html += '</tr>\n';
+            buf.push('</tr>');
         }
-        html += `</tbody>
+        this.stream.write(buf.join('\n') + '\n');
+    }
+    writeFooter(totalRows) {
+        this.stream.write(`</tbody>
 </table>
-<p class="count">${rows.length} rows exported on ${new Date().toLocaleString()}</p>
+<p class="count">${totalRows.toLocaleString()} rows exported on ${new Date().toLocaleString()}</p>
 </body>
-</html>`;
-        fs.writeFileSync(filePath, html, 'utf-8');
-    }
-    csvEscape(value) {
-        if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-            return '"' + value.replace(/"/g, '""') + '"';
-        }
-        return value;
-    }
-    xmlEscape(value) {
-        return value
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&apos;');
-    }
-    htmlEscape(value) {
-        return value
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
-    }
-    formatValue(val) {
-        if (val === null || val === undefined) {
-            return '';
-        }
-        if (val instanceof Date) {
-            return val.toISOString();
-        }
-        if (Buffer.isBuffer(val)) {
-            return val.toString('base64');
-        }
-        return String(val);
-    }
-    formatFileSize(bytes) {
-        if (bytes < 1024) {
-            return bytes + ' B';
-        }
-        if (bytes < 1024 * 1024) {
-            return (bytes / 1024).toFixed(1) + ' KB';
-        }
-        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+</html>`);
     }
 }
-exports.ExportService = ExportService;
+// ── XLSX (uses ExcelJS streaming workbook writer) ──
+class XlsxStreamWriter {
+    stream;
+    columns;
+    sheetName;
+    workbook;
+    sheet;
+    rowIndex = 1;
+    constructor(stream, columns, sheetName) {
+        this.stream = stream;
+        this.columns = columns;
+        this.sheetName = sheetName;
+    }
+    writeHeader() {
+        const ExcelJS = require('exceljs');
+        this.workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: this.stream });
+        this.workbook.creator = 'ING SQL for VS Code';
+        this.workbook.created = new Date();
+        this.sheet = this.workbook.addWorksheet(this.sheetName || 'Data');
+        this.sheet.columns = this.columns.map(col => ({
+            header: col.name,
+            key: col.name,
+            width: Math.max(col.name.length + 2, 12),
+        }));
+        // Style header row
+        const headerRow = this.sheet.getRow(1);
+        headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        headerRow.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF4472C4' }
+        };
+        headerRow.border = {
+            bottom: { style: 'medium', color: { argb: 'FF2F528F' } }
+        };
+        headerRow.commit();
+        this.rowIndex = 2;
+    }
+    writeBatch(rows) {
+        for (const row of rows) {
+            const rowData = {};
+            this.columns.forEach((col, idx) => {
+                rowData[col.name] = row[idx];
+            });
+            const excelRow = this.sheet.addRow(rowData);
+            // Alternate row colors
+            if (this.rowIndex % 2 === 0) {
+                excelRow.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFF2F2F2' }
+                };
+            }
+            excelRow.commit();
+            this.rowIndex++;
+        }
+    }
+    writeFooter(totalRows) {
+        // Auto-filter
+        if (totalRows > 0) {
+            this.sheet.autoFilter = {
+                from: { row: 1, column: 1 },
+                to: { row: totalRows + 1, column: this.columns.length }
+            };
+        }
+        this.sheet.commit();
+        this.workbook.commit();
+    }
+}
 //# sourceMappingURL=exportService.js.map

@@ -45,16 +45,27 @@ A professional Oracle SQL Developer clone for Visual Studio Code, optimized for 
 ## 🛡️ Audit Log Details
 The auditing system is hardcoded for maximum security. It records hostname, user, connection, format, and content metadata for every export. Logs are transmitted to `http://dwh-logger-api.athena.svc.cluster.local`.
 
-## 📦 Distribution Filenames (V2.1.2)
+## 📦 Distribution Filenames (V2.2.1)
 
 | Version | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
-| **Full** | `ing-sql-linux-x64-2.1.2.vsix` | `ing-sql-darwin-arm64-2.1.2.vsix` |
-| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.1.2.vsix` | `ing-sql-intl-darwin-arm64-2.1.2.vsix` |
-| **Restricted** | `ing-sql-restricted-linux-x64-2.1.2.vsix` | `ing-sql-restricted-darwin-arm64-2.1.2.vsix` |
-| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.1.2.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.1.2.vsix` |
+| **Full** | `ing-sql-linux-x64-2.2.1.vsix` | `ing-sql-darwin-arm64-2.2.1.vsix` |
+| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.2.1.vsix` | `ing-sql-intl-darwin-arm64-2.2.1.vsix` |
+| **Restricted** | `ing-sql-restricted-linux-x64-2.2.1.vsix` | `ing-sql-restricted-darwin-arm64-2.2.1.vsix` |
+| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.2.1.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.2.1.vsix` |
 
 ## 📋 Changelog
+
+### v2.2.1 — Export Timer
+- **New**: Live elapsed timer in the export progress notification (e.g., "Exported 150,000 rows... (12.3s)")
+
+### v2.2.0 — Streaming Export (Performance)
+- **Optimized**: Exports now stream rows directly from Oracle to file in 10K batches, instead of loading all rows into memory first
+- 250K+ row exports that previously timed out now complete in seconds
+- All 6 formats (CSV, XLSX, JSON, XML, SQL, HTML) rewritten with streaming writers
+- XLSX uses ExcelJS `stream.xlsx.WorkbookWriter` for constant-memory Excel generation
+- Progress notification shows real-time row count during export
+- Export cancellation now cleans up partial files
 
 ### v2.1.2 — Other Users Performance Fix
 - **Fixed**: Extreme lag, scanning, and DB lock-ups when expanding the "Other Users" node. The query was optimized to use `ALL_USERS` instead of evaluating permissions recursively via `ALL_OBJECTS`. Loading schemas is now instantaneous.
