@@ -64,7 +64,15 @@ class ObjectBrowserProvider {
                 return this.getCategoryNodes(element.connectionName);
             case 'connection-disconnected':
                 return [];
+            case 'other-users':
+                return this.getOtherSchemaNodes(element.connectionName);
+            case 'other-schema':
+                return this.getSchemaCategoryNodes(element.connectionName, element.objectName);
             case 'category':
+                // If schemaName is set and different from default, it's a category under Other Users
+                if (element.schemaName && element.parentObjectName === '_other_schema_') {
+                    return this.getOtherSchemaObjectNodes(element);
+                }
                 return this.getObjectNodes(element);
             case 'table':
             case 'view':
@@ -86,7 +94,44 @@ class ObjectBrowserProvider {
         });
     }
     getCategoryNodes(connectionName) {
-        return treeItems_1.OBJECT_CATEGORIES.map(cat => new treeItems_1.OracleTreeItem(cat.label, 'category', vscode.TreeItemCollapsibleState.Collapsed, connectionName, undefined, cat.type));
+        const categories = treeItems_1.OBJECT_CATEGORIES.map(cat => new treeItems_1.OracleTreeItem(cat.label, 'category', vscode.TreeItemCollapsibleState.Collapsed, connectionName, undefined, cat.type));
+        // Add "Other Users" at the bottom
+        categories.push(new treeItems_1.OracleTreeItem('Other Users', 'other-users', vscode.TreeItemCollapsibleState.Collapsed, connectionName));
+        return categories;
+    }
+    async getOtherSchemaNodes(connectionName) {
+        try {
+            const schemas = await this.oracleService.getAccessibleSchemas(connectionName);
+            return schemas.map(schema => new treeItems_1.OracleTreeItem(schema, 'other-schema', vscode.TreeItemCollapsibleState.Collapsed, connectionName, schema, schema));
+        }
+        catch (err) {
+            vscode.window.showErrorMessage(`Error loading schemas: ${err.message}`);
+            return [];
+        }
+    }
+    getSchemaCategoryNodes(connectionName, schemaName) {
+        return treeItems_1.OBJECT_CATEGORIES.map(cat => new treeItems_1.OracleTreeItem(cat.label, 'category', vscode.TreeItemCollapsibleState.Collapsed, connectionName, schemaName, cat.type, '_other_schema_' // marker so getChildren knows this is under Other Users
+        ));
+    }
+    async getOtherSchemaObjectNodes(categoryElement) {
+        const connectionName = categoryElement.connectionName;
+        const schemaName = categoryElement.schemaName;
+        const objectType = categoryElement.objectName;
+        try {
+            const objects = await this.oracleService.getSchemaObjectsForOwner(objectType, schemaName, connectionName);
+            const category = treeItems_1.OBJECT_CATEGORIES.find(c => c.type === objectType);
+            const itemType = category?.itemType || 'table';
+            return objects.map(obj => {
+                const hasChildren = ['table', 'view', 'mview'].includes(itemType);
+                return new treeItems_1.OracleTreeItem(obj.name, itemType, hasChildren
+                    ? vscode.TreeItemCollapsibleState.Collapsed
+                    : vscode.TreeItemCollapsibleState.None, connectionName, schemaName, obj.name, undefined, obj.status !== 'VALID' ? obj.status : undefined);
+            });
+        }
+        catch (err) {
+            vscode.window.showErrorMessage(`Error loading ${schemaName} objects: ${err.message}`);
+            return [];
+        }
     }
     async getObjectNodes(categoryElement) {
         const connectionName = categoryElement.connectionName;

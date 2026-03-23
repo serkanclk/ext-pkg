@@ -94,6 +94,8 @@ class OracleTreeItem extends vscode.TreeItem {
             'grant': 'shield',
             'table-trigger': 'zap',
             'table-index': 'list-tree',
+            'other-users': 'organization',
+            'other-schema': 'person',
         };
         const iconName = iconMap[this.objectType] || 'circle-outline';
         return new vscode.ThemeIcon(iconName);

@@ -351,6 +351,60 @@ class OracleService {
             await conn.close();
         }
     }
+    /**
+     * List all schemas the user has access to (excluding their own).
+     */
+    async getAccessibleSchemas(connectionName) {
+        const conn = await this.getConnection(connectionName);
+        try {
+            const sql = `
+                SELECT DISTINCT OWNER
+                FROM ALL_OBJECTS
+                WHERE OWNER != USER
+                AND OWNER NOT IN ('SYS','SYSTEM','DBSNMP','OUTLN','XDB','WMSYS',
+                    'CTXSYS','MDSYS','ORDDATA','ORDSYS','OLAPSYS','EXFSYS',
+                    'APPQOSSYS','DBSFWUSER','GSMADMIN_INTERNAL','LBACSYS',
+                    'OJVMSYS','DVF','DVSYS','AUDSYS','REMOTE_SCHEDULER_AGENT')
+                ORDER BY OWNER
+            `;
+            const result = await conn.execute(sql, {}, {
+                outFormat: oracledb_1.default.OUT_FORMAT_ARRAY
+            });
+            return (result.rows || []).map(row => row[0]);
+        }
+        finally {
+            await conn.close();
+        }
+    }
+    /**
+     * List objects of a given type owned by a specific schema.
+     */
+    async getSchemaObjectsForOwner(objectType, owner, connectionName) {
+        const conn = await this.getConnection(connectionName);
+        try {
+            const sql = `
+                SELECT OWNER, OBJECT_NAME, OBJECT_TYPE, STATUS, CREATED, LAST_DDL_TIME
+                FROM ALL_OBJECTS
+                WHERE OWNER = :owner
+                AND OBJECT_TYPE = :type
+                ORDER BY OBJECT_NAME
+            `;
+            const result = await conn.execute(sql, { owner, type: objectType }, {
+                outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
+            });
+            return (result.rows || []).map(row => ({
+                owner: row.OWNER,
+                name: row.OBJECT_NAME,
+                type: row.OBJECT_TYPE,
+                status: row.STATUS,
+                created: row.CREATED,
+                lastDdlTime: row.LAST_DDL_TIME,
+            }));
+        }
+        finally {
+            await conn.close();
+        }
+    }
     async getTableColumns(tableName, connectionName) {
         const conn = await this.getConnection(connectionName);
         try {

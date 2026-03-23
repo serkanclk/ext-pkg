@@ -45,16 +45,22 @@ A professional Oracle SQL Developer clone for Visual Studio Code, optimized for 
 ## 🛡️ Audit Log Details
 The auditing system is hardcoded for maximum security. It records hostname, user, connection, format, and content metadata for every export. Logs are transmitted to `http://dwh-logger-api.athena.svc.cluster.local`.
 
-## 📦 Distribution Filenames (V1.9.0)
+## 📦 Distribution Filenames (V2.0.0)
 
 | Version | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
-| **Full** | `ing-sql-linux-x64-1.9.0.vsix` | `ing-sql-darwin-arm64-1.9.0.vsix` |
-| **Full + Intellisense** | `ing-sql-intl-linux-x64-1.9.0.vsix` | `ing-sql-intl-darwin-arm64-1.9.0.vsix` |
-| **Restricted** | `ing-sql-restricted-linux-x64-1.9.0.vsix` | `ing-sql-restricted-darwin-arm64-1.9.0.vsix` |
-| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-1.9.0.vsix` | `ing-sql-restricted-intl-darwin-arm64-1.9.0.vsix` |
+| **Full** | `ing-sql-linux-x64-2.0.0.vsix` | `ing-sql-darwin-arm64-2.0.0.vsix` |
+| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.0.0.vsix` | `ing-sql-intl-darwin-arm64-2.0.0.vsix` |
+| **Restricted** | `ing-sql-restricted-linux-x64-2.0.0.vsix` | `ing-sql-restricted-darwin-arm64-2.0.0.vsix` |
+| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.0.0.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.0.0.vsix` |
 
 ## 📋 Changelog
+
+### v2.0.0 — Other Users in Object Browser
+- **New**: "Other Users" folder under each connection, matching Oracle SQL Developer
+- Browse any accessible schema's Tables, Views, Procedures, Functions, etc.
+- System schemas (SYS, SYSTEM, XDB, etc.) are filtered out for cleanliness
+- Full drill-down: Connection → Other Users → Schema → Category → Objects
 
 ### v1.9.0 — Semicolon Handling Fix
 - **Fixed**: SQL statements ending with `;` or `/` no longer cause "SQL not properly ended" errors
