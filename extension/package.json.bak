@@ -2,7 +2,7 @@
   "name": "ing-sql",
   "displayName": "ING SQL",
   "description": "Oracle SQL Developer for VS Code (ING Specific)",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "publisher": "ing-sql",
   "engines": {
     "vscode": "^1.85.0"
@@ -347,6 +347,11 @@
           "command": "ingSql.importData",
           "when": "view == ingSql.objectBrowser && viewItem == table",
           "group": "data@2"
+        },
+        {
+          "command": "ingSql.importData",
+          "when": "view == ingSql.objectBrowser && viewItem == category-tables",
+          "group": "data@1"
         },
         {
           "command": "ingSql.describeObject",

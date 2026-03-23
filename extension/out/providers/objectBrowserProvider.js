@@ -94,7 +94,14 @@ class ObjectBrowserProvider {
         });
     }
     getCategoryNodes(connectionName) {
-        const categories = treeItems_1.OBJECT_CATEGORIES.map(cat => new treeItems_1.OracleTreeItem(cat.label, 'category', vscode.TreeItemCollapsibleState.Collapsed, connectionName, undefined, cat.type));
+        const categories = treeItems_1.OBJECT_CATEGORIES.map(cat => {
+            const node = new treeItems_1.OracleTreeItem(cat.label, 'category', vscode.TreeItemCollapsibleState.Collapsed, connectionName, undefined, cat.type);
+            // Give the Tables category a distinct contextValue for the Import menu
+            if (cat.type === 'TABLE') {
+                node.contextValue = 'category-tables';
+            }
+            return node;
+        });
         // Add "Other Users" at the bottom
         categories.push(new treeItems_1.OracleTreeItem('Other Users', 'other-users', vscode.TreeItemCollapsibleState.Collapsed, connectionName));
         return categories;
