@@ -40,6 +40,24 @@ const path = __importStar(require("path"));
 const oracleService_1 = require("./oracleService");
 const exportPanel_1 = require("../panels/exportPanel");
 const EXPORT_BATCH_SIZE = 10000;
+/**
+ * Helper: write to stream with backpressure handling.
+ * If the internal buffer is full, wait for 'drain' before continuing.
+ * This prevents Node.js from queuing hundreds of MBs in memory.
+ */
+function streamWrite(stream, data) {
+    return new Promise((resolve, reject) => {
+        const ok = stream.write(data);
+        if (ok) {
+            resolve();
+        }
+        else {
+            // Buffer is full — wait for drain before writing more
+            stream.once('drain', resolve);
+            stream.once('error', reject);
+        }
+    });
+}
 class ExportService {
     static instance;
     context;
@@ -118,9 +136,8 @@ class ExportService {
         }, async (progress, token) => {
             const oracleService = oracleService_1.OracleService.getInstance();
             let columns = [];
-            const stream = fs.createWriteStream(filePath, { encoding: 'utf-8' });
-            let isFirstBatch = true;
-            let writer;
+            const stream = fs.createWriteStream(filePath, { encoding: 'utf-8', highWaterMark: 64 * 1024 });
+            let writer = null;
             const exportStart = Date.now();
             progress.report({ message: 'Initializing export cursor...' });
             try {
@@ -128,11 +145,8 @@ class ExportService {
                     columns = cols;
                     writer = this.createStreamWriter(format, stream, columns, tableName);
                     writer.writeHeader();
-                }, async (rows, batchNum, totalSoFar) => {
-                    if (isFirstBatch) {
-                        isFirstBatch = false;
-                    }
-                    writer.writeBatch(rows);
+                }, async (rows, _batchNum, totalSoFar) => {
+                    await writer.writeBatch(rows);
                     const elapsed = ((Date.now() - exportStart) / 1000).toFixed(1);
                     progress.report({
                         message: `Exported ${totalSoFar.toLocaleString()} rows... (${elapsed}s)`
@@ -140,7 +154,6 @@ class ExportService {
                 }, () => token.isCancellationRequested);
                 if (token.isCancellationRequested) {
                     stream.end();
-                    // Clean up partial file
                     try {
                         fs.unlinkSync(filePath);
                     }
@@ -149,9 +162,12 @@ class ExportService {
                 }
                 // Write footer/closing tags
                 if (writer) {
-                    writer.writeFooter(totalRows);
+                    await writer.writeFooter(totalRows);
                 }
-                // Wait for stream to finish
+                // Release writer refs so GC can collect column data, ExcelJS objects, etc.
+                writer = null;
+                columns = [];
+                // Wait for stream to finish flushing to disk
                 await new Promise((resolve, reject) => {
                     stream.end(() => resolve());
                     stream.on('error', reject);
@@ -160,11 +176,12 @@ class ExportService {
             }
             catch (err) {
                 stream.end();
+                writer = null;
+                columns = [];
                 throw err;
             }
         });
     }
-    // For XLSX which needs its own streaming API, we handle it specially
     createStreamWriter(format, stream, columns, tableName) {
         switch (format) {
             case 'csv': return new CsvStreamWriter(stream, columns);
@@ -183,8 +200,8 @@ class ExportService {
         const stream = fs.createWriteStream(filePath, { encoding: 'utf-8' });
         const writer = this.createStreamWriter(format, stream, columns, tableName);
         writer.writeHeader();
-        writer.writeBatch(rows);
-        writer.writeFooter(rows.length);
+        await writer.writeBatch(rows);
+        await writer.writeFooter(rows.length);
         await new Promise((resolve, reject) => {
             stream.end(() => resolve());
             stream.on('error', reject);
@@ -242,18 +259,22 @@ class CsvStreamWriter {
         this.columns = columns;
     }
     writeHeader() {
-        // BOM for Excel compatibility
         this.stream.write('\ufeff');
         this.stream.write(this.columns.map(c => csvEscape(c.name)).join(',') + '\n');
     }
-    writeBatch(rows) {
-        const buf = [];
-        for (const row of rows) {
-            buf.push(row.map(val => csvEscape(formatValue(val))).join(','));
+    async writeBatch(rows) {
+        // Build chunk of ~1000 rows at a time to balance memory vs syscall overhead
+        const CHUNK = 1000;
+        for (let i = 0; i < rows.length; i += CHUNK) {
+            const end = Math.min(i + CHUNK, rows.length);
+            let chunk = '';
+            for (let j = i; j < end; j++) {
+                chunk += rows[j].map(val => csvEscape(formatValue(val))).join(',') + '\n';
+            }
+            await streamWrite(this.stream, chunk);
         }
-        this.stream.write(buf.join('\n') + '\n');
     }
-    writeFooter() { }
+    async writeFooter() { }
 }
 // ── JSON ──
 class JsonStreamWriter {
@@ -267,21 +288,23 @@ class JsonStreamWriter {
     writeHeader() {
         this.stream.write('[\n');
     }
-    writeBatch(rows) {
+    async writeBatch(rows) {
+        let chunk = '';
         for (const row of rows) {
             const obj = {};
             this.columns.forEach((col, idx) => {
                 obj[col.name] = row[idx];
             });
             if (!this.isFirst) {
-                this.stream.write(',\n');
+                chunk += ',\n';
             }
-            this.stream.write('  ' + JSON.stringify(obj));
+            chunk += '  ' + JSON.stringify(obj);
             this.isFirst = false;
         }
+        await streamWrite(this.stream, chunk);
     }
-    writeFooter() {
-        this.stream.write('\n]\n');
+    async writeFooter() {
+        await streamWrite(this.stream, '\n]\n');
     }
 }
 // ── XML ──
@@ -298,21 +321,24 @@ class XmlStreamWriter {
         this.stream.write('<?xml version="1.0" encoding="UTF-8"?>\n');
         this.stream.write(`<${this.root}>\n`);
     }
-    writeBatch(rows) {
-        const buf = [];
-        for (const row of rows) {
-            buf.push('  <ROW>');
-            this.columns.forEach((col, idx) => {
-                const val = row[idx];
-                const escaped = xmlEscape(formatValue(val));
-                buf.push(`    <${col.name}>${escaped}</${col.name}>`);
-            });
-            buf.push('  </ROW>');
+    async writeBatch(rows) {
+        const CHUNK = 500; // XML rows are larger, smaller chunks
+        for (let i = 0; i < rows.length; i += CHUNK) {
+            const end = Math.min(i + CHUNK, rows.length);
+            let chunk = '';
+            for (let j = i; j < end; j++) {
+                chunk += '  <ROW>\n';
+                this.columns.forEach((col, idx) => {
+                    const escaped = xmlEscape(formatValue(rows[j][idx]));
+                    chunk += `    <${col.name}>${escaped}</${col.name}>\n`;
+                });
+                chunk += '  </ROW>\n';
+            }
+            await streamWrite(this.stream, chunk);
         }
-        this.stream.write(buf.join('\n') + '\n');
     }
-    writeFooter() {
-        this.stream.write(`</${this.root}>\n`);
+    async writeFooter() {
+        await streamWrite(this.stream, `</${this.root}>\n`);
     }
 }
 // ── SQL (INSERT statements) ──
@@ -326,29 +352,33 @@ class SqlStreamWriter {
         this.tableName = tableName;
     }
     writeHeader() { }
-    writeBatch(rows) {
+    async writeBatch(rows) {
         const colNames = this.columns.map(c => c.name).join(', ');
-        const buf = [];
-        for (const row of rows) {
-            const values = row.map((val, idx) => {
-                if (val === null || val === undefined) {
-                    return 'NULL';
-                }
-                const col = this.columns[idx];
-                if (['NUMBER', 'BINARY_FLOAT', 'BINARY_DOUBLE', 'FLOAT', 'INTEGER'].includes(col.dbType)) {
-                    return String(val);
-                }
-                if (col.dbType === 'DATE' || col.dbType.startsWith('TIMESTAMP')) {
-                    return `TO_DATE('${val}', 'YYYY-MM-DD HH24:MI:SS')`;
-                }
-                return `'${String(val).replace(/'/g, "''")}'`;
-            });
-            buf.push(`INSERT INTO ${this.tableName} (${colNames}) VALUES (${values.join(', ')});`);
+        const CHUNK = 1000;
+        for (let i = 0; i < rows.length; i += CHUNK) {
+            const end = Math.min(i + CHUNK, rows.length);
+            let chunk = '';
+            for (let j = i; j < end; j++) {
+                const values = rows[j].map((val, idx) => {
+                    if (val === null || val === undefined) {
+                        return 'NULL';
+                    }
+                    const col = this.columns[idx];
+                    if (['NUMBER', 'BINARY_FLOAT', 'BINARY_DOUBLE', 'FLOAT', 'INTEGER'].includes(col.dbType)) {
+                        return String(val);
+                    }
+                    if (col.dbType === 'DATE' || col.dbType.startsWith('TIMESTAMP')) {
+                        return `TO_DATE('${val}', 'YYYY-MM-DD HH24:MI:SS')`;
+                    }
+                    return `'${String(val).replace(/'/g, "''")}'`;
+                });
+                chunk += `INSERT INTO ${this.tableName} (${colNames}) VALUES (${values.join(', ')});\n`;
+            }
+            await streamWrite(this.stream, chunk);
         }
-        this.stream.write(buf.join('\n') + '\n');
     }
-    writeFooter() {
-        this.stream.write('\nCOMMIT;\n');
+    async writeFooter() {
+        await streamWrite(this.stream, '\nCOMMIT;\n');
     }
 }
 // ── HTML ──
@@ -390,24 +420,28 @@ class HtmlStreamWriter {
         }
         this.stream.write('</tr></thead>\n<tbody>\n');
     }
-    writeBatch(rows) {
-        const buf = [];
-        for (const row of rows) {
-            buf.push('<tr>');
-            for (const val of row) {
-                if (val === null || val === undefined) {
-                    buf.push('<td class="null">(null)</td>');
+    async writeBatch(rows) {
+        const CHUNK = 500;
+        for (let i = 0; i < rows.length; i += CHUNK) {
+            const end = Math.min(i + CHUNK, rows.length);
+            let chunk = '';
+            for (let j = i; j < end; j++) {
+                chunk += '<tr>';
+                for (const val of rows[j]) {
+                    if (val === null || val === undefined) {
+                        chunk += '<td class="null">(null)</td>';
+                    }
+                    else {
+                        chunk += `<td>${htmlEscape(String(val))}</td>`;
+                    }
                 }
-                else {
-                    buf.push(`<td>${htmlEscape(String(val))}</td>`);
-                }
+                chunk += '</tr>\n';
             }
-            buf.push('</tr>');
+            await streamWrite(this.stream, chunk);
         }
-        this.stream.write(buf.join('\n') + '\n');
     }
-    writeFooter(totalRows) {
-        this.stream.write(`</tbody>
+    async writeFooter(totalRows) {
+        await streamWrite(this.stream, `</tbody>
 </table>
 <p class="count">${totalRows.toLocaleString()} rows exported on ${new Date().toLocaleString()}</p>
 </body>
@@ -452,26 +486,26 @@ class XlsxStreamWriter {
         headerRow.commit();
         this.rowIndex = 2;
     }
-    writeBatch(rows) {
+    async writeBatch(rows) {
         for (const row of rows) {
             const rowData = {};
             this.columns.forEach((col, idx) => {
                 rowData[col.name] = row[idx];
             });
             const excelRow = this.sheet.addRow(rowData);
-            // Alternate row colors
-            if (this.rowIndex % 2 === 0) {
+            // Alternate row colors — skip for massive exports (>50K) to save memory
+            if (this.rowIndex <= 50001 && this.rowIndex % 2 === 0) {
                 excelRow.fill = {
                     type: 'pattern',
                     pattern: 'solid',
                     fgColor: { argb: 'FFF2F2F2' }
                 };
             }
-            excelRow.commit();
+            excelRow.commit(); // Flush row to stream immediately, release memory
             this.rowIndex++;
         }
     }
-    writeFooter(totalRows) {
+    async writeFooter(totalRows) {
         // Auto-filter
         if (totalRows > 0) {
             this.sheet.autoFilter = {
@@ -480,7 +514,10 @@ class XlsxStreamWriter {
             };
         }
         this.sheet.commit();
-        this.workbook.commit();
+        await this.workbook.commit();
+        // Release ExcelJS internal refs
+        this.sheet = null;
+        this.workbook = null;
     }
 }
 //# sourceMappingURL=exportService.js.map

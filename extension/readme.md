@@ -45,16 +45,23 @@ A professional Oracle SQL Developer clone for Visual Studio Code, optimized for 
 ## 🛡️ Audit Log Details
 The auditing system is hardcoded for maximum security. It records hostname, user, connection, format, and content metadata for every export. Logs are transmitted to `http://dwh-logger-api.athena.svc.cluster.local`.
 
-## 📦 Distribution Filenames (V2.3.0)
+## 📦 Distribution Filenames (V2.3.1)
 
 | Version | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
-| **Full** | `ing-sql-linux-x64-2.3.0.vsix` | `ing-sql-darwin-arm64-2.3.0.vsix` |
-| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.3.0.vsix` | `ing-sql-intl-darwin-arm64-2.3.0.vsix` |
-| **Restricted** | `ing-sql-restricted-linux-x64-2.3.0.vsix` | `ing-sql-restricted-darwin-arm64-2.3.0.vsix` |
-| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.3.0.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.3.0.vsix` |
+| **Full** | `ing-sql-linux-x64-2.3.1.vsix` | `ing-sql-darwin-arm64-2.3.1.vsix` |
+| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.3.1.vsix` | `ing-sql-intl-darwin-arm64-2.3.1.vsix` |
+| **Restricted** | `ing-sql-restricted-linux-x64-2.3.1.vsix` | `ing-sql-restricted-darwin-arm64-2.3.1.vsix` |
+| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.3.1.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.3.1.vsix` |
 
 ## 📋 Changelog
+
+### v2.3.1 — Export Memory Optimization
+- **Optimized**: Backpressure-aware streaming — waits for OS write buffer drain before sending more data, preventing 500MB+ memory spikes
+- **Optimized**: Chunked writes (500-1000 rows per I/O call) to balance memory usage vs syscall overhead
+- **Optimized**: Writer and ExcelJS object refs nullified immediately after export completes for faster GC
+- **Improved**: XLSX row striping disabled for exports >50K rows to save memory on large datasets
+- **Improved**: WriteStream buffer increased to 64KB for better I/O throughput
 
 ### v2.3.0 — Data Import Wizard
 - **New**: Full 5-step import wizard matching Oracle SQL Developer's Data Import interface:
