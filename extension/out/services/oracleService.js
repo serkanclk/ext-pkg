@@ -44,14 +44,26 @@ const connectionManager_1 = require("./connectionManager");
 // Dates MUST be fetched as strings so Oracle applies NLS session formatting
 // (set via ALTER SESSION in applyNlsSettings). Without this, oracledb returns
 // native JS Date objects which bypass Oracle's NLS_DATE_FORMAT entirely.
-oracledb_1.default.fetchAsString = [
-    oracledb_1.default.CLOB,
-    oracledb_1.default.DB_TYPE_DATE,
-    oracledb_1.default.DB_TYPE_TIMESTAMP,
-    oracledb_1.default.DB_TYPE_TIMESTAMP_TZ,
-    oracledb_1.default.DB_TYPE_TIMESTAMP_LTZ
-];
-oracledb_1.default.fetchAsBuffer = [oracledb_1.default.BLOB];
+// Wrapped in try-catch because some oracledb versions/modes don't support all DB_TYPE_ constants.
+try {
+    oracledb_1.default.fetchAsString = [
+        oracledb_1.default.CLOB,
+        oracledb_1.default.DB_TYPE_DATE,
+        oracledb_1.default.DB_TYPE_TIMESTAMP,
+        oracledb_1.default.DB_TYPE_TIMESTAMP_TZ,
+        oracledb_1.default.DB_TYPE_TIMESTAMP_LTZ
+    ];
+    oracledb_1.default.fetchAsBuffer = [oracledb_1.default.BLOB];
+}
+catch {
+    // Fallback: only set universally supported types
+    try {
+        oracledb_1.default.fetchAsString = [oracledb_1.default.CLOB];
+        oracledb_1.default.fetchAsBuffer = [oracledb_1.default.BLOB];
+    }
+    catch { /* extension will still load */ }
+    console.warn('Could not set full fetchAsString types — date formatting may differ.');
+}
 class OracleService {
     static instance;
     static activeCursors = new Map();
