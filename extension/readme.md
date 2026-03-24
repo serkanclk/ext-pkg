@@ -45,16 +45,20 @@ A professional Oracle SQL Developer clone for Visual Studio Code, optimized for 
 ## 🛡️ Audit Log Details
 The auditing system is hardcoded for maximum security. It records hostname, user, connection, format, and content metadata for every export. Logs are transmitted to `http://dwh-logger-api.athena.svc.cluster.local`.
 
-## 📦 Distribution Filenames (V2.3.2)
+## 📦 Distribution Filenames (V2.3.3)
 
 | Version | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
-| **Full** | `ing-sql-linux-x64-2.3.2.vsix` | `ing-sql-darwin-arm64-2.3.2.vsix` |
-| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.3.2.vsix` | `ing-sql-intl-darwin-arm64-2.3.2.vsix` |
-| **Restricted** | `ing-sql-restricted-linux-x64-2.3.2.vsix` | `ing-sql-restricted-darwin-arm64-2.3.2.vsix` |
-| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.3.2.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.3.2.vsix` |
+| **Full** | `ing-sql-linux-x64-2.3.3.vsix` | `ing-sql-darwin-arm64-2.3.3.vsix` |
+| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.3.3.vsix` | `ing-sql-intl-darwin-arm64-2.3.3.vsix` |
+| **Restricted** | `ing-sql-restricted-linux-x64-2.3.3.vsix` | `ing-sql-restricted-darwin-arm64-2.3.3.vsix` |
+| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.3.3.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.3.3.vsix` |
 
 ## 📋 Changelog
+
+### v2.3.3 — Procedures & Dependencies Fix
+- **Fixed**: Other Users stored procedures/functions/packages now use `ALL_SOURCE` (broadest visibility) instead of `ALL_PROCEDURES` which had null `OBJECT_TYPE` issues
+- **Fixed**: Dependencies tab now works for Other Users' objects — was hardcoded to `OWNER = USER`, now uses the actual schema
 
 ### v2.3.2 — Import Menu + Other Users Procedures Fix
 - **New**: "Import Data" now appears on right-click of the **Tables** folder (not just individual table nodes)

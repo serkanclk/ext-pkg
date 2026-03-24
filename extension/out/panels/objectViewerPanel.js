@@ -207,7 +207,7 @@ class ObjectViewerPanel {
                 this.panel?.webview.postMessage({ type: 'renderDdl', ddl: ddl || 'No DDL available.' });
             }
             else if (tabId === 'dependencies') {
-                const { dependencies, referencedBy } = await oracleService.getDependencies(this.currentObjectName, this.currentConnectionName);
+                const { dependencies, referencedBy } = await oracleService.getDependencies(this.currentObjectName, this.currentConnectionName, this.currentSchemaName);
                 this.panel?.webview.postMessage({ type: 'renderDependencies', dependencies, referencedBy });
             }
             else if (['stats', 'grants', 'triggers', 'flashback', 'details', 'partitions', 'json'].includes(tabId)) {

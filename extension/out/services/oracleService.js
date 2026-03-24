@@ -447,7 +447,8 @@ class OracleService {
     }
     /**
      * List objects of a given type owned by a specific schema.
-     * Uses ALL_PROCEDURES for PROCEDURE/FUNCTION/PACKAGE to match Oracle SQL Developer visibility.
+     * For PROCEDURE/FUNCTION/PACKAGE: uses ALL_SOURCE for broadest visibility,
+     * since ALL_OBJECTS may not show objects the user lacks direct grants on.
      */
     async getSchemaObjectsForOwner(objectType, owner, connectionName) {
         const conn = await this.getConnection(connectionName);
@@ -455,22 +456,21 @@ class OracleService {
             let sql;
             let binds;
             if (['PROCEDURE', 'FUNCTION', 'PACKAGE'].includes(objectType)) {
-                // ALL_PROCEDURES has broader visibility than ALL_OBJECTS for PL/SQL objects.
-                // ALL_OBJECTS only shows objects the user has direct grants on,
-                // while ALL_PROCEDURES shows any procedure the current user can reference.
+                // ALL_SOURCE has the broadest visibility for PL/SQL objects.
+                // It shows source for any object the user can see, regardless of grants.
+                // We use DISTINCT NAME since ALL_SOURCE has one row per source line.
                 sql = `
-                    SELECT DISTINCT OWNER, OBJECT_NAME, OBJECT_TYPE,
-                           DECODE(
-                               (SELECT STATUS FROM ALL_OBJECTS ao
-                                WHERE ao.OWNER = ap.OWNER AND ao.OBJECT_NAME = ap.OBJECT_NAME
-                                AND ao.OBJECT_TYPE = ap.OBJECT_TYPE AND ROWNUM = 1),
-                               'VALID', 'VALID', 'INVALID'
+                    SELECT DISTINCT s.OWNER, s.NAME AS OBJECT_NAME, s.TYPE AS OBJECT_TYPE,
+                           NVL(
+                               (SELECT ao.STATUS FROM ALL_OBJECTS ao
+                                WHERE ao.OWNER = s.OWNER AND ao.OBJECT_NAME = s.NAME
+                                AND ao.OBJECT_TYPE = s.TYPE AND ROWNUM = 1),
+                               'VALID'
                            ) AS STATUS
-                    FROM ALL_PROCEDURES ap
-                    WHERE OWNER = :owner
-                    AND OBJECT_TYPE = :type
-                    AND OBJECT_NAME IS NOT NULL
-                    ORDER BY OBJECT_NAME
+                    FROM ALL_SOURCE s
+                    WHERE s.OWNER = :owner
+                    AND s.TYPE = :type
+                    ORDER BY s.NAME
                 `;
                 binds = { owner, type: objectType };
             }
@@ -740,9 +740,13 @@ class OracleService {
             await conn.close();
         }
     }
-    async getDependencies(objectName, connectionName) {
+    async getDependencies(objectName, connectionName, schemaName) {
         const conn = await this.getConnection(connectionName);
         try {
+            // Use provided schema or default to current user
+            const ownerFilter = schemaName || 'USER';
+            const ownerBind = schemaName ? { name: objectName, owner: schemaName } : { name: objectName };
+            const ownerWhere = schemaName ? 'OWNER = :owner' : 'OWNER = USER';
             // Objects this object depends on
             const depsSql = `
                 SELECT REFERENCED_OWNER AS OWNER, 
@@ -750,10 +754,10 @@ class OracleService {
                        REFERENCED_TYPE AS TYPE, 
                        DEPENDENCY_TYPE
                 FROM ALL_DEPENDENCIES
-                WHERE OWNER = USER AND NAME = :name
+                WHERE ${ownerWhere} AND NAME = :name
                 ORDER BY TYPE, NAME
             `;
-            const depsResult = await conn.execute(depsSql, { name: objectName }, {
+            const depsResult = await conn.execute(depsSql, ownerBind, {
                 outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
             });
             // Objects that reference this object
@@ -763,10 +767,10 @@ class OracleService {
                        TYPE, 
                        DEPENDENCY_TYPE
                 FROM ALL_DEPENDENCIES
-                WHERE REFERENCED_OWNER = USER AND REFERENCED_NAME = :name
+                WHERE ${schemaName ? 'REFERENCED_OWNER = :owner' : 'REFERENCED_OWNER = USER'} AND REFERENCED_NAME = :name
                 ORDER BY TYPE, NAME
             `;
-            const refResult = await conn.execute(refSql, { name: objectName }, {
+            const refResult = await conn.execute(refSql, ownerBind, {
                 outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
             });
             return {
