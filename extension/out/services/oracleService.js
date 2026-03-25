@@ -40,30 +40,39 @@ exports.OracleService = void 0;
 const vscode = __importStar(require("vscode"));
 const oracledb_1 = __importDefault(require("oracledb"));
 const connectionManager_1 = require("./connectionManager");
-// Auto-fetch LOBs and date/timestamp types as strings.
-// Dates MUST be fetched as strings so Oracle applies NLS session formatting
-// (set via ALTER SESSION in applyNlsSettings). Without this, oracledb returns
-// native JS Date objects which bypass Oracle's NLS_DATE_FORMAT entirely.
-// Wrapped in try-catch because some oracledb versions/modes don't support all DB_TYPE_ constants.
+// Force date/timestamp types to be fetched as strings so Oracle applies
+// NLS session formatting (e.g. NLS_DATE_FORMAT set via ALTER SESSION).
+// Without this, oracledb returns native JS Date objects that bypass NLS entirely.
+//
+// We use fetchTypeHandler (oracledb 6.x) because fetchAsString only accepts
+// legacy constants (oracledb.DATE, oracledb.NUMBER) and throws NJS-021 if you
+// pass DB_TYPE_* constants like DB_TYPE_DATE.
 try {
-    oracledb_1.default.fetchAsString = [
-        oracledb_1.default.CLOB,
+    const dateTypes = new Set([
         oracledb_1.default.DB_TYPE_DATE,
         oracledb_1.default.DB_TYPE_TIMESTAMP,
         oracledb_1.default.DB_TYPE_TIMESTAMP_TZ,
-        oracledb_1.default.DB_TYPE_TIMESTAMP_LTZ
-    ];
+        oracledb_1.default.DB_TYPE_TIMESTAMP_LTZ,
+    ].filter(t => t !== undefined));
+    oracledb_1.default.fetchTypeHandler = function (metaData) {
+        if (dateTypes.has(metaData.dbType)) {
+            return { type: oracledb_1.default.STRING };
+        }
+    };
+    console.log(`[ING SQL] fetchTypeHandler configured for ${dateTypes.size} date/timestamp type(s)`);
+}
+catch (err) {
+    console.warn('[ING SQL] Could not set fetchTypeHandler:', err.message);
+}
+// Fetch CLOBs as strings and BLOBs as buffers using legacy API (safe on all versions)
+try {
+    oracledb_1.default.fetchAsString = [oracledb_1.default.CLOB];
+}
+catch { /* skip */ }
+try {
     oracledb_1.default.fetchAsBuffer = [oracledb_1.default.BLOB];
 }
-catch {
-    // Fallback: only set universally supported types
-    try {
-        oracledb_1.default.fetchAsString = [oracledb_1.default.CLOB];
-        oracledb_1.default.fetchAsBuffer = [oracledb_1.default.BLOB];
-    }
-    catch { /* extension will still load */ }
-    console.warn('Could not set full fetchAsString types — date formatting may differ.');
-}
+catch { /* skip */ }
 class OracleService {
     static instance;
     static activeCursors = new Map();

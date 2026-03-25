@@ -45,16 +45,26 @@ A professional Oracle SQL Developer clone for Visual Studio Code, optimized for 
 ## 🛡️ Audit Log Details
 The auditing system is hardcoded for maximum security. It records hostname, user, connection, format, and content metadata for every export. Logs are transmitted to `http://dwh-logger-api.athena.svc.cluster.local`.
 
-## 📦 Distribution Filenames (V2.3.3)
+## 📦 Distribution Filenames (V2.3.5)
 
 | Version | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
-| **Full** | `ing-sql-linux-x64-2.3.3.vsix` | `ing-sql-darwin-arm64-2.3.3.vsix` |
-| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.3.3.vsix` | `ing-sql-intl-darwin-arm64-2.3.3.vsix` |
-| **Restricted** | `ing-sql-restricted-linux-x64-2.3.3.vsix` | `ing-sql-restricted-darwin-arm64-2.3.3.vsix` |
-| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.3.3.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.3.3.vsix` |
+| **Full** | `ing-sql-linux-x64-2.3.5.vsix` | `ing-sql-darwin-arm64-2.3.5.vsix` |
+| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.3.5.vsix` | `ing-sql-intl-darwin-arm64-2.3.5.vsix` |
+| **Restricted** | `ing-sql-restricted-linux-x64-2.3.5.vsix` | `ing-sql-restricted-darwin-arm64-2.3.5.vsix` |
+| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.3.5.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.3.5.vsix` |
 
 ## 📋 Changelog
+
+### v2.3.5 — Critical: Extension Activation Fix
+- **Fixed**: Extension failed to activate on oracledb 6.x — `fetchAsString` threw `NJS-021` when passed `DB_TYPE_*` constants
+- **Fixed**: Replaced `fetchAsString` with `fetchTypeHandler` (modern oracledb 6.x API) for date/timestamp string conversion
+- **Fixed**: NLS_DATE_FORMAT now works correctly via `fetchTypeHandler` intercepting date types at fetch time
+
+### v2.3.4 — NLS Date Format Fix
+- **Fixed**: `ALTER SESSION SET NLS_DATE_FORMAT` now takes effect — root cause was `fetchAsString` silently reverting to CLOB-only when any `DB_TYPE_*` constant was undefined
+- **Fixed**: Date/timestamp types now individually registered with `fetchAsString` (each in its own try-catch) so one missing constant doesn't break all of them
+- **Added**: Diagnostic log at startup showing which fetch types are registered
 
 ### v2.3.3 — Procedures & Dependencies Fix
 - **Fixed**: Other Users stored procedures/functions/packages now use `ALL_SOURCE` (broadest visibility) instead of `ALL_PROCEDURES` which had null `OBJECT_TYPE` issues
