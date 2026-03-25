@@ -56,15 +56,16 @@ class SqlStatusBar {
     showRunning() {
         this.clearTimers();
         this.startTime = Date.now();
-        this.item.text = '$(sync~spin) SQL Running... (0.0s)';
+        this.item.text = '$(sync~spin) SQL Running... (0.0s) — Click to Cancel';
         this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
         this.item.color = undefined;
-        this.item.tooltip = 'SQL query is executing... Click to show results panel';
+        this.item.command = 'ingSql.cancelQuery';
+        this.item.tooltip = 'Click to cancel the running query';
         this.item.show();
         // Live timer — update every 100ms
         this.timer = setInterval(() => {
             const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
-            this.item.text = `$(sync~spin) SQL Running... (${elapsed}s)`;
+            this.item.text = `$(sync~spin) SQL Running... (${elapsed}s) — Click to Cancel`;
         }, 100);
     }
     /** Call when a query succeeds */
@@ -76,6 +77,7 @@ class SqlStatusBar {
         this.item.text = `$(check) ${rowCount} row(s) · ${timeStr}`;
         this.item.backgroundColor = undefined;
         this.item.color = '#3fb950'; // green
+        this.item.command = 'ingSql.resultsView.focus';
         this.item.tooltip = `Query completed: ${rowCount} row(s) in ${timeStr}. Click to show results.`;
         this.item.show();
         // Auto-fade after 15 seconds
@@ -97,9 +99,26 @@ class SqlStatusBar {
         this.item.text = `$(error) ${shortError} · ${timeStr}`;
         this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
         this.item.color = undefined;
+        this.item.command = 'ingSql.resultsView.focus';
         this.item.tooltip = `SQL Error: ${errorMessage}`;
         this.item.show();
         // Keep error visible — no auto-fade (clears on next query)
+    }
+    /** Call when a query is cancelled */
+    showCancelled() {
+        this.clearTimers();
+        const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
+        this.item.text = `$(circle-slash) Query cancelled · ${elapsed}s`;
+        this.item.backgroundColor = undefined;
+        this.item.color = '#d29922'; // orange/yellow
+        this.item.command = 'ingSql.resultsView.focus';
+        this.item.tooltip = 'Query was cancelled by user';
+        this.item.show();
+        this.fadeTimeout = setTimeout(() => {
+            this.item.text = `$(database) SQL Ready`;
+            this.item.color = undefined;
+            this.item.tooltip = 'Ready to execute SQL';
+        }, 10000);
     }
     /** Show idle/ready state */
     showReady() {

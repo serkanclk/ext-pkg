@@ -45,6 +45,8 @@ class SqlWorksheetCommands {
     resultsPanel;
     historyProvider;
     statusBar;
+    /** SQL*Plus-style DEFINE substitution variables (persist across statements) */
+    defineVars = new Map();
     constructor(context, resultsPanel, historyProvider, statusBar) {
         this.context = context;
         this.oracleService = oracleService_1.OracleService.getInstance();
@@ -348,11 +350,34 @@ class SqlWorksheetCommands {
         // Strip trailing semicolons and PL/SQL '/' terminators
         // Oracle's programmatic API doesn't accept these (SQL*Plus convention only)
         sql = sql.replace(/[;\s/]+$/, '').trim();
-        // Detect bind variables
+        // ── Handle DEFINE / UNDEFINE (SQL*Plus substitution variables) ──
+        const defineMatch = sql.match(/^DEFINE\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*['"]?(.+?)['"]?\s*$/i);
+        if (defineMatch) {
+            const [, varName, varValue] = defineMatch;
+            this.defineVars.set(varName.toUpperCase(), varValue);
+            vscode.window.showInformationMessage(`DEFINE ${varName.toUpperCase()} = "${varValue}"`);
+            return;
+        }
+        const undefineMatch = sql.match(/^UNDEFINE\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i);
+        if (undefineMatch) {
+            const varName = undefineMatch[1].toUpperCase();
+            this.defineVars.delete(varName);
+            vscode.window.showInformationMessage(`UNDEFINE ${varName}`);
+            return;
+        }
+        // ── Substitute &var and &&var references ──
+        // Replace &varname (or &&varname) with the DEFINE'd value.
+        // Only substitute outside of single-quoted strings.
+        if (this.defineVars.size > 0) {
+            sql = this.applySubstitutionVars(sql);
+        }
+        // Detect bind variables — but ignore :names inside string literals.
+        // Strip single-quoted strings first so 'HH24:MI:SS' doesn't match :MI.
+        const sqlNoStrings = sql.replace(/'[^']*'/g, "''");
         const bindVarRegex = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
         const bindNames = [];
         let match;
-        while ((match = bindVarRegex.exec(sql)) !== null) {
+        while ((match = bindVarRegex.exec(sqlNoStrings)) !== null) {
             if (!bindNames.includes(match[1])) {
                 bindNames.push(match[1]);
             }
@@ -392,14 +417,9 @@ class SqlWorksheetCommands {
                 const result = await this.oracleService.executeCursor(sql, binds, {
                     connection: sessionConn
                 });
-                const config = vscode.workspace.getConfiguration('ingSql');
-                const location = config.get('results.location', 'Panel');
-                if (location === 'Editor') {
-                    vscode.commands.executeCommand('ingSql.showResultsInTab', result);
-                }
-                else {
-                    this.resultsPanel.showResults(result);
-                }
+                // Show results in the bottom panel — matching Oracle SQL Developer layout
+                // where results appear below the SQL editor.
+                this.resultsPanel.showResults(result);
                 this.historyProvider.addEntry(sql, result.executionTime, result.rowCount);
                 this.statusBar.showSuccess(result.rowCount, result.executionTime);
             }
@@ -413,11 +433,38 @@ class SqlWorksheetCommands {
             }
         }
         catch (err) {
+            // ORA-01013 = user requested cancel — handled by status bar, not an error
+            if (err.message && err.message.includes('ORA-01013')) {
+                this.statusBar.showCancelled();
+                return;
+            }
             const elapsed = Date.now() - this.statusBar['startTime'] || 0;
             this.historyProvider.addEntry(sql, 0, 0, err.message);
             this.statusBar.showError(err.message, elapsed);
             vscode.window.showErrorMessage(`SQL Error: ${err.message}`);
         }
+    }
+    /**
+     * Replace &varname / &&varname with DEFINE'd values.
+     * Skips substitution inside single-quoted string literals.
+     */
+    applySubstitutionVars(sql) {
+        // Split into quoted-string tokens and non-string tokens
+        const parts = sql.split(/('(?:[^']|'')*')/);
+        for (let i = 0; i < parts.length; i++) {
+            // Odd indices are quoted strings — skip them
+            if (i % 2 === 1)
+                continue;
+            // Replace &&var and &var (longer prefix first)
+            parts[i] = parts[i].replace(/&&?([a-zA-Z_][a-zA-Z0-9_]*)/g, (_match, varName) => {
+                const value = this.defineVars.get(varName.toUpperCase());
+                if (value !== undefined) {
+                    return value;
+                }
+                return _match; // leave unresolved vars as-is
+            });
+        }
+        return parts.join('');
     }
     getStatementAtCursor(editor) {
         // If there's a selection, use it

@@ -76,6 +76,8 @@ catch { /* skip */ }
 class OracleService {
     static instance;
     static activeCursors = new Map();
+    /** Connection currently executing a query — used for cancellation via break() */
+    static activeRunningConn = null;
     static thickModeInitialized = false;
     constructor() { }
     static getInstance() {
@@ -86,6 +88,22 @@ class OracleService {
     }
     static isThickMode() {
         return OracleService.thickModeInitialized;
+    }
+    /**
+     * Cancel the currently running query by calling connection.break().
+     * This causes the pending execute() to throw ORA-01013.
+     */
+    static async cancelRunningQuery() {
+        if (OracleService.activeRunningConn) {
+            try {
+                await OracleService.activeRunningConn.break();
+                return true;
+            }
+            catch (err) {
+                console.warn('[ING SQL] Failed to cancel query:', err.message);
+            }
+        }
+        return false;
     }
     static initializeThickMode() {
         const clientPath = (process.env.ORACLE_CLIENT_PATH || '/usr/lib/oracle/23/client64/lib').trim();
@@ -192,11 +210,13 @@ class OracleService {
         try {
             const config = vscode.workspace.getConfiguration('ingSql');
             const batchSize = options.batchSize || config.get('resultGrid.maxRows', 100);
+            OracleService.activeRunningConn = conn;
             const result = await conn.execute(sql, binds, {
                 outFormat: oracledb_1.default.OUT_FORMAT_ARRAY,
                 resultSet: true,
                 autoCommit: false,
             });
+            OracleService.activeRunningConn = null;
             if (!result.resultSet) {
                 throw new Error("Query did not return a ResultSet.");
             }
@@ -232,6 +252,7 @@ class OracleService {
             }
         }
         catch (err) {
+            OracleService.activeRunningConn = null;
             if (!isSessionConn) {
                 await conn.close();
             }
@@ -327,7 +348,9 @@ class OracleService {
             const autoCommit = options.autoCommit !== undefined
                 ? options.autoCommit
                 : config.get('autoCommit', false);
+            OracleService.activeRunningConn = conn;
             const result = await conn.execute(sql, binds, { autoCommit });
+            OracleService.activeRunningConn = null;
             return {
                 rowsAffected: result.rowsAffected || 0,
                 statement: sql,

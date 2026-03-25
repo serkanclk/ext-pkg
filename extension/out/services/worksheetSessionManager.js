@@ -62,6 +62,12 @@ class WorksheetSessionManager {
         this.disposables.push(vscode.workspace.onDidCloseTextDocument(doc => {
             this.releaseSession(doc.uri.toString());
         }));
+        // Re-apply NLS settings to all active sessions when config changes
+        this.disposables.push(vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('ingSql.nls')) {
+                this.reapplyNlsToAllSessions();
+            }
+        }));
         // Update status bar for current editor
         this.updateStatusBar(vscode.window.activeTextEditor);
     }
@@ -133,6 +139,27 @@ class WorksheetSessionManager {
             session.connection.close().catch(() => { });
             this.sessions.delete(docUri);
             this.updateStatusBar(vscode.window.activeTextEditor);
+        }
+    }
+    /**
+     * Re-apply NLS settings to all active sessions (called when config changes).
+     */
+    async reapplyNlsToAllSessions() {
+        if (this.sessions.size === 0)
+            return;
+        const oracleService = oracleService_js_1.OracleService.getInstance();
+        let count = 0;
+        for (const [, session] of this.sessions) {
+            try {
+                await oracleService.applyNlsSettingsPublic(session.connection);
+                count++;
+            }
+            catch (err) {
+                console.warn(`Failed to reapply NLS to session ${session.sessionId}:`, err.message);
+            }
+        }
+        if (count > 0) {
+            vscode.window.showInformationMessage(`NLS settings updated on ${count} active session(s).`);
         }
     }
     /**

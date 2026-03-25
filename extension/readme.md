@@ -45,16 +45,44 @@ A professional Oracle SQL Developer clone for Visual Studio Code, optimized for 
 ## 🛡️ Audit Log Details
 The auditing system is hardcoded for maximum security. It records hostname, user, connection, format, and content metadata for every export. Logs are transmitted to `http://dwh-logger-api.athena.svc.cluster.local`.
 
-## 📦 Distribution Filenames (V2.3.5)
+## 📦 Distribution Filenames (V2.4.2)
 
 | Version | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
-| **Full** | `ing-sql-linux-x64-2.3.5.vsix` | `ing-sql-darwin-arm64-2.3.5.vsix` |
-| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.3.5.vsix` | `ing-sql-intl-darwin-arm64-2.3.5.vsix` |
-| **Restricted** | `ing-sql-restricted-linux-x64-2.3.5.vsix` | `ing-sql-restricted-darwin-arm64-2.3.5.vsix` |
-| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.3.5.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.3.5.vsix` |
+| **Full** | `ing-sql-linux-x64-2.4.2.vsix` | `ing-sql-darwin-arm64-2.4.2.vsix` |
+| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.4.2.vsix` | `ing-sql-intl-darwin-arm64-2.4.2.vsix` |
+| **Restricted** | `ing-sql-restricted-linux-x64-2.4.2.vsix` | `ing-sql-restricted-darwin-arm64-2.4.2.vsix` |
+| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.4.2.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.4.2.vsix` |
 
 ## 📋 Changelog
+
+### v2.4.2 — Persistent Schema Storage
+- **Improved**: Pinned schemas now stored in VS Code user settings (like connections) — survives extension uninstall/reinstall
+
+### v2.4.1 — Bottom Panel Results + Persistent Schemas
+- **Fixed**: Query results now appear in the **bottom panel** (matching Oracle SQL Developer layout), not as editor tabs
+- **New**: Pinned schemas under "Other Users" are persisted via `globalState` — remembered across restarts
+
+### v2.4.0 — Query Cancellation + Schema Filter
+- **New**: Running queries can now be cancelled by clicking the status bar (shows "Click to Cancel" during execution)
+- **New**: "Other Users" now uses QuickPick search — select schemas to browse instead of loading all
+- **New**: Right-click "Remove Schema" to unpin schemas from the tree
+- **Improved**: ORA-01013 (user cancel) shown as info rather than error
+
+### v2.3.9 — DEFINE Substitution Variables + Bind Fix
+- **New**: Support for `DEFINE var = value` / `UNDEFINE var` and `&var` / `&&var` substitution (SQL*Plus-style)
+- **Fixed**: Bind variable detection no longer triggers on `:names` inside string literals (e.g. `'HH24:MI:SS'`)
+
+### v2.3.8 — Plain Excel Export + Query Sheet
+- **Changed**: Excel export now plain (no colors/formatting) — matches Oracle SQL Developer behavior
+- **New**: Excel exports include a "Query" sheet with the SQL statement, export timestamp, and row count
+
+### v2.3.7 — Unified Results Grid
+- **Improved**: SELECT query results now open in the same comprehensive grid as "Open Data" (editor tab with sort, filter, export, load more)
+- **Removed**: Bottom panel results view replaced with full editor tab experience
+
+### v2.3.6 — NLS Live Reload
+- **New**: Changing NLS settings in VS Code preferences now immediately applies to all open worksheet sessions — no need to open a new worksheet
 
 ### v2.3.5 — Critical: Extension Activation Fix
 - **Fixed**: Extension failed to activate on oracledb 6.x — `fetchAsString` threw `NJS-021` when passed `DB_TYPE_*` constants

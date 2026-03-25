@@ -67,7 +67,7 @@ function activate(context) {
         const importService = importService_1.ImportService.getInstance(context);
         const auditLogService = auditLogService_1.AuditLogService.getInstance();
         // ─── Initialize UI Components ───
-        const objectBrowserProvider = new objectBrowserProvider_1.ObjectBrowserProvider();
+        const objectBrowserProvider = new objectBrowserProvider_1.ObjectBrowserProvider(context);
         const sqlLanguageProvider = new sqlLanguageProvider_1.SqlLanguageProvider();
         const sqlHistoryProvider = new sqlHistoryProvider_1.SqlHistoryProvider(context);
         const dbmsOutputProvider = new dbmsOutputProvider_1.DbmsOutputProvider();
@@ -240,8 +240,21 @@ function activate(context) {
                 vscode.window.showInformationMessage('Oracle is running in default Thin Mode (No client path specified).');
             }
         }), vscode.commands.registerCommand('ingSql.showResultsInTab', (result) => {
-            const panel = vscode.window.createWebviewPanel('ingSqlQueryResult', `Query Result (${new Date().toLocaleTimeString()})`, vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
-            objectViewerPanel_1.ObjectViewerPanel.createOrShowQueryResults(panel, result, context.extensionUri);
+            const connName = connMgr.getActiveConnectionName() || 'default';
+            const viewer = getObjectViewer('__query_result__', connName);
+            viewer.showQueryResults(result);
+        }), vscode.commands.registerCommand('ingSql.cancelQuery', async () => {
+            const cancelled = await oracleService_1.OracleService.cancelRunningQuery();
+            if (cancelled) {
+                sqlStatusBar.showCancelled();
+                vscode.window.showInformationMessage('Query cancelled.');
+            }
+        }), vscode.commands.registerCommand('ingSql.addOtherSchema', async (connectionName) => {
+            await objectBrowserProvider.addSchema(connectionName);
+        }), vscode.commands.registerCommand('ingSql.removeOtherSchema', (item) => {
+            if (item.connectionName && item.objectName) {
+                objectBrowserProvider.removeSchema(item.connectionName, item.objectName);
+            }
         }), vscode.commands.registerCommand('ingSql.searchObjects', async (contextItem) => {
             let connectionName = contextItem?.connectionName;
             if (!connectionName) {

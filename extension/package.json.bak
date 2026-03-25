@@ -2,7 +2,7 @@
   "name": "ing-sql",
   "displayName": "ING SQL",
   "description": "Oracle SQL Developer for VS Code (ING Specific)",
-  "version": "2.3.5",
+  "version": "2.4.2",
   "publisher": "ing-sql",
   "engines": {
     "vscode": "^1.85.0"
@@ -184,6 +184,12 @@
         "title": "Drop",
         "category": "Oracle",
         "icon": "$(trash)"
+      },
+      {
+        "command": "ingSql.removeOtherSchema",
+        "title": "Remove Schema",
+        "category": "Oracle",
+        "icon": "$(close)"
       },
       {
         "command": "ingSql.viewSource",
@@ -377,6 +383,16 @@
           "command": "ingSql.dropObject",
           "when": "view == ingSql.objectBrowser && viewItem =~ /^(table|view|mview|index|sequence|procedure|function|package|trigger|type|synonym|dblink)$/",
           "group": "danger@1"
+        },
+        {
+          "command": "ingSql.removeOtherSchema",
+          "when": "view == ingSql.objectBrowser && viewItem == other-schema",
+          "group": "inline@1"
+        },
+        {
+          "command": "ingSql.removeOtherSchema",
+          "when": "view == ingSql.objectBrowser && viewItem == other-schema",
+          "group": "schema@1"
         }
       ],
       "editor/title": [

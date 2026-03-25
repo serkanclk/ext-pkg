@@ -43,14 +43,71 @@ class ObjectBrowserProvider {
     onDidChangeTreeData = this._onDidChangeTreeData.event;
     connMgr;
     oracleService;
-    constructor() {
+    /** Schemas the user has pinned under "Other Users", keyed by connection name */
+    pinnedSchemas = new Map();
+    constructor(context) {
         this.connMgr = connectionManager_1.ConnectionManager.getInstance();
         this.oracleService = oracleService_1.OracleService.getInstance();
+        // Restore pinned schemas from VS Code user settings (survives uninstall/reinstall)
+        const config = vscode.workspace.getConfiguration('ingSql');
+        const saved = config.get('pinnedSchemas', {});
+        for (const [conn, schemas] of Object.entries(saved)) {
+            this.pinnedSchemas.set(conn, new Set(schemas));
+        }
         this.connMgr.onDidChangeConnection(() => this.refresh());
         this.connMgr.onDidUpdateProfiles(() => this.refresh());
     }
     refresh() {
         this._onDidChangeTreeData.fire();
+    }
+    /** Save pinned schemas to VS Code user settings (same as connections) */
+    savePinnedSchemas() {
+        const obj = {};
+        for (const [conn, set] of this.pinnedSchemas) {
+            obj[conn] = Array.from(set);
+        }
+        const config = vscode.workspace.getConfiguration('ingSql');
+        config.update('pinnedSchemas', obj, vscode.ConfigurationTarget.Global);
+    }
+    /**
+     * Show QuickPick to search and add a schema under "Other Users".
+     */
+    async addSchema(connectionName) {
+        const schemas = await this.oracleService.getAccessibleSchemas(connectionName);
+        const pinned = this.pinnedSchemas.get(connectionName) || new Set();
+        const items = schemas.map(s => ({
+            label: s,
+            description: pinned.has(s) ? '(already added)' : '',
+            picked: pinned.has(s),
+        }));
+        const selected = await vscode.window.showQuickPick(items, {
+            placeHolder: 'Type to search schemas...',
+            title: 'Add Schema to Other Users',
+            matchOnDescription: false,
+            canPickMany: true,
+        });
+        if (selected && selected.length > 0) {
+            if (!this.pinnedSchemas.has(connectionName)) {
+                this.pinnedSchemas.set(connectionName, new Set());
+            }
+            const set = this.pinnedSchemas.get(connectionName);
+            for (const s of selected) {
+                set.add(s.label);
+            }
+            this.savePinnedSchemas();
+            this.refresh();
+        }
+    }
+    /**
+     * Remove a pinned schema from "Other Users".
+     */
+    removeSchema(connectionName, schemaName) {
+        const set = this.pinnedSchemas.get(connectionName);
+        if (set) {
+            set.delete(schemaName);
+            this.savePinnedSchemas();
+            this.refresh();
+        }
     }
     getTreeItem(element) {
         return element;
@@ -106,15 +163,25 @@ class ObjectBrowserProvider {
         categories.push(new treeItems_1.OracleTreeItem('Other Users', 'other-users', vscode.TreeItemCollapsibleState.Collapsed, connectionName));
         return categories;
     }
-    async getOtherSchemaNodes(connectionName) {
-        try {
-            const schemas = await this.oracleService.getAccessibleSchemas(connectionName);
-            return schemas.map(schema => new treeItems_1.OracleTreeItem(schema, 'other-schema', vscode.TreeItemCollapsibleState.Collapsed, connectionName, schema, schema));
+    getOtherSchemaNodes(connectionName) {
+        const nodes = [];
+        // Show pinned schemas
+        const pinned = this.pinnedSchemas.get(connectionName);
+        if (pinned) {
+            for (const schema of Array.from(pinned).sort()) {
+                nodes.push(new treeItems_1.OracleTreeItem(schema, 'other-schema', vscode.TreeItemCollapsibleState.Collapsed, connectionName, schema, schema));
+            }
         }
-        catch (err) {
-            vscode.window.showErrorMessage(`Error loading schemas: ${err.message}`);
-            return [];
-        }
+        // "Add Schema..." action item
+        const addItem = new treeItems_1.OracleTreeItem('$(add) Add Schema...', 'add-schema-action', vscode.TreeItemCollapsibleState.None, connectionName);
+        addItem.command = {
+            command: 'ingSql.addOtherSchema',
+            title: 'Add Schema',
+            arguments: [connectionName]
+        };
+        addItem.tooltip = 'Search and add a schema to browse';
+        nodes.push(addItem);
+        return nodes;
     }
     getSchemaCategoryNodes(connectionName, schemaName) {
         return treeItems_1.OBJECT_CATEGORIES.map(cat => new treeItems_1.OracleTreeItem(cat.label, 'category', vscode.TreeItemCollapsibleState.Collapsed, connectionName, schemaName, cat.type, '_other_schema_' // marker so getChildren knows this is under Other Users

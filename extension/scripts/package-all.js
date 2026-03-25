@@ -44,25 +44,6 @@ function getVersion() {
     return pkg.version;
 }
 
-function createLinuxIntlZip(version) {
-    const vsixName = `ing-sql-intl-linux-x64-${version}.vsix`;
-    const zipName = `ing-sql-intl-linux-x64-${version}.zip`;
-    const vsixPath = path.join(REGULAR_DIR, vsixName);
-    const zipPath = path.join(REGULAR_DIR, zipName);
-
-    if (!fs.existsSync(vsixPath)) {
-        console.log(`\n[!] Cannot create zip — ${vsixName} not found`);
-        return;
-    }
-
-    console.log(`\n[*] Creating zip for Linux x64 Intellisense...`);
-    try {
-        execSync(`zip "${zipPath}" "${vsixName}"`, { cwd: REGULAR_DIR, stdio: 'inherit' });
-        console.log(`  ✓ Created ${zipName}`);
-    } catch (err) {
-        console.error(`  [!] Failed to create zip: ${err.message}`);
-    }
-}
 
 function runBuild() {
     const version = getVersion();
@@ -104,8 +85,6 @@ function runBuild() {
         }
     }
 
-    // Create zip of Linux x64 Intellisense version
-    createLinuxIntlZip(version);
 
     // Restore to full at the end
     execSync('node scripts/prepare.js', { stdio: 'inherit' });

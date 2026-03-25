@@ -75,9 +75,17 @@ class ObjectViewerPanel {
         }, 100);
     }
     async showQueryResults(result) {
-        if (!this.panel)
-            return;
+        if (!this.panel) {
+            this.panel = vscode.window.createWebviewPanel('ingSqlObjectViewer', 'Query Result', { viewColumn: vscode.ViewColumn.One, preserveFocus: false }, {
+                enableScripts: true,
+                retainContextWhenHidden: true,
+                localResourceRoots: [this.extensionUri]
+            });
+            this.initPanel(this.panel);
+        }
         this.currentConnectionName = 'SQL';
+        this.panel.title = `Query Result (${new Date().toLocaleTimeString()})`;
+        this.panel.reveal();
         this.panel.webview.html = this.getHtmlBase(true);
         const formattedRows = result.rows.map(row => row.map(val => Buffer.isBuffer(val) ? val.toString('hex').toUpperCase() : val));
         this.currentCursorId = result.cursorId;

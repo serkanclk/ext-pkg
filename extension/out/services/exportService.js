@@ -96,7 +96,7 @@ class ExportService {
             }
             else if (options.columns && options.rows) {
                 // ── In-memory export (small result sets from grid) ──
-                await this.writeFormat(format, filePath, options.columns, options.rows, options.tableName);
+                await this.writeFormat(format, filePath, options.columns, options.rows, options.tableName, options.statement);
                 totalRows = options.rows.length;
             }
             else {
@@ -143,7 +143,7 @@ class ExportService {
             try {
                 const totalRows = await oracleService.executeExportStream(sql, connectionName, EXPORT_BATCH_SIZE, (cols) => {
                     columns = cols;
-                    writer = this.createStreamWriter(format, stream, columns, tableName);
+                    writer = this.createStreamWriter(format, stream, columns, tableName, sql);
                     writer.writeHeader();
                 }, async (rows, _batchNum, totalSoFar) => {
                     await writer.writeBatch(rows);
@@ -182,23 +182,23 @@ class ExportService {
             }
         });
     }
-    createStreamWriter(format, stream, columns, tableName) {
+    createStreamWriter(format, stream, columns, tableName, sql) {
         switch (format) {
             case 'csv': return new CsvStreamWriter(stream, columns);
             case 'json': return new JsonStreamWriter(stream, columns);
             case 'xml': return new XmlStreamWriter(stream, columns, tableName);
             case 'sql': return new SqlStreamWriter(stream, columns, tableName || 'TABLE_NAME');
             case 'html': return new HtmlStreamWriter(stream, columns, tableName);
-            case 'xlsx': return new XlsxStreamWriter(stream, columns, tableName);
+            case 'xlsx': return new XlsxStreamWriter(stream, columns, tableName, sql);
             default: return new CsvStreamWriter(stream, columns);
         }
     }
     // ─────────────────────────────────────────────
     // In-memory write (for small result-grid exports)
     // ─────────────────────────────────────────────
-    async writeFormat(format, filePath, columns, rows, tableName) {
+    async writeFormat(format, filePath, columns, rows, tableName, statement) {
         const stream = fs.createWriteStream(filePath, { encoding: 'utf-8' });
-        const writer = this.createStreamWriter(format, stream, columns, tableName);
+        const writer = this.createStreamWriter(format, stream, columns, tableName, statement);
         writer.writeHeader();
         await writer.writeBatch(rows);
         await writer.writeFooter(rows.length);
@@ -448,18 +448,20 @@ class HtmlStreamWriter {
 </html>`);
     }
 }
-// ── XLSX (uses ExcelJS streaming workbook writer) ──
+// ── XLSX (plain, matching Oracle SQL Developer behavior) ──
 class XlsxStreamWriter {
     stream;
     columns;
     sheetName;
+    sql;
     workbook;
     sheet;
     rowIndex = 1;
-    constructor(stream, columns, sheetName) {
+    constructor(stream, columns, sheetName, sql) {
         this.stream = stream;
         this.columns = columns;
         this.sheetName = sheetName;
+        this.sql = sql;
     }
     writeHeader() {
         const ExcelJS = require('exceljs');
@@ -472,17 +474,9 @@ class XlsxStreamWriter {
             key: col.name,
             width: Math.max(col.name.length + 2, 12),
         }));
-        // Style header row
+        // Plain header — bold only, no colors (matching Oracle SQL Developer)
         const headerRow = this.sheet.getRow(1);
-        headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-        headerRow.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FF4472C4' }
-        };
-        headerRow.border = {
-            bottom: { style: 'medium', color: { argb: 'FF2F528F' } }
-        };
+        headerRow.font = { bold: true };
         headerRow.commit();
         this.rowIndex = 2;
     }
@@ -493,20 +487,12 @@ class XlsxStreamWriter {
                 rowData[col.name] = row[idx];
             });
             const excelRow = this.sheet.addRow(rowData);
-            // Alternate row colors — skip for massive exports (>50K) to save memory
-            if (this.rowIndex <= 50001 && this.rowIndex % 2 === 0) {
-                excelRow.fill = {
-                    type: 'pattern',
-                    pattern: 'solid',
-                    fgColor: { argb: 'FFF2F2F2' }
-                };
-            }
             excelRow.commit(); // Flush row to stream immediately, release memory
             this.rowIndex++;
         }
     }
     async writeFooter(totalRows) {
-        // Auto-filter
+        // Auto-filter on data sheet
         if (totalRows > 0) {
             this.sheet.autoFilter = {
                 from: { row: 1, column: 1 },
@@ -514,6 +500,21 @@ class XlsxStreamWriter {
             };
         }
         this.sheet.commit();
+        // Add "Query" info sheet with the SQL statement
+        if (this.sql) {
+            const infoSheet = this.workbook.addWorksheet('Query');
+            infoSheet.columns = [
+                { header: 'Property', key: 'prop', width: 20 },
+                { header: 'Value', key: 'val', width: 80 },
+            ];
+            const hdr = infoSheet.getRow(1);
+            hdr.font = { bold: true };
+            hdr.commit();
+            infoSheet.addRow({ prop: 'SQL Statement', val: this.sql }).commit();
+            infoSheet.addRow({ prop: 'Exported At', val: new Date().toISOString() }).commit();
+            infoSheet.addRow({ prop: 'Total Rows', val: totalRows }).commit();
+            infoSheet.commit();
+        }
         await this.workbook.commit();
         // Release ExcelJS internal refs
         this.sheet = null;
