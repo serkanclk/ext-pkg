@@ -235,18 +235,19 @@ class ObjectBrowserProvider {
         const tableName = element.parentObjectName;
         const connectionName = element.connectionName;
         const subCategory = element.objectName;
+        const owner = element.schemaName;
         try {
             switch (subCategory) {
                 case 'Columns':
-                    return this.getColumnNodes(tableName, connectionName);
+                    return this.getColumnNodes(tableName, connectionName, owner);
                 case 'Constraints':
-                    return this.getConstraintNodes(tableName, connectionName);
+                    return this.getConstraintNodes(tableName, connectionName, owner);
                 case 'Indexes':
-                    return this.getIndexNodes(tableName, connectionName);
+                    return this.getIndexNodes(tableName, connectionName, owner);
                 case 'Triggers':
-                    return this.getTriggerNodes(tableName, connectionName);
+                    return this.getTriggerNodes(tableName, connectionName, owner);
                 case 'Grants':
-                    return this.getGrantNodes(tableName, connectionName);
+                    return this.getGrantNodes(tableName, connectionName, owner);
                 default:
                     return [];
             }
@@ -256,8 +257,8 @@ class ObjectBrowserProvider {
             return [];
         }
     }
-    async getColumnNodes(tableName, connectionName) {
-        const columns = await this.oracleService.getTableColumns(tableName, connectionName);
+    async getColumnNodes(tableName, connectionName, owner) {
+        const columns = await this.oracleService.getTableColumns(tableName, connectionName, owner);
         return columns.map(col => {
             let typeStr = col.dataType;
             if (col.dataPrecision !== null) {
@@ -269,24 +270,24 @@ class ObjectBrowserProvider {
             if (col.nullable === 'N') {
                 typeStr += ' NOT NULL';
             }
-            return new treeItems_1.OracleTreeItem(col.name, 'column', vscode.TreeItemCollapsibleState.None, connectionName, undefined, col.name, tableName, typeStr);
+            return new treeItems_1.OracleTreeItem(col.name, 'column', vscode.TreeItemCollapsibleState.None, connectionName, owner, col.name, tableName, typeStr);
         });
     }
-    async getConstraintNodes(tableName, connectionName) {
-        const constraints = await this.oracleService.getConstraints(tableName, connectionName);
-        return constraints.map(c => new treeItems_1.OracleTreeItem(c.name, 'constraint', vscode.TreeItemCollapsibleState.None, connectionName, undefined, c.name, tableName, `${c.type} (${c.columns})${c.refTable ? ` → ${c.refTable}` : ''}`));
+    async getConstraintNodes(tableName, connectionName, owner) {
+        const constraints = await this.oracleService.getConstraints(tableName, connectionName, owner);
+        return constraints.map(c => new treeItems_1.OracleTreeItem(c.name, 'constraint', vscode.TreeItemCollapsibleState.None, connectionName, owner, c.name, tableName, `${c.type} (${c.columns})${c.refTable ? ` → ${c.refTable}` : ''}`));
     }
-    async getIndexNodes(tableName, connectionName) {
-        const indexes = await this.oracleService.getIndexes(tableName, connectionName);
-        return indexes.map(i => new treeItems_1.OracleTreeItem(i.name, 'table-index', vscode.TreeItemCollapsibleState.None, connectionName, undefined, i.name, tableName, `${i.uniqueness} (${i.columns})`));
+    async getIndexNodes(tableName, connectionName, owner) {
+        const indexes = await this.oracleService.getIndexes(tableName, connectionName, owner);
+        return indexes.map(i => new treeItems_1.OracleTreeItem(i.name, 'table-index', vscode.TreeItemCollapsibleState.None, connectionName, owner, i.name, tableName, `${i.uniqueness} (${i.columns})`));
     }
-    async getTriggerNodes(tableName, connectionName) {
-        const triggers = await this.oracleService.getTriggers(tableName, connectionName);
-        return triggers.map((t) => new treeItems_1.OracleTreeItem(t.TRIGGER_NAME, 'table-trigger', vscode.TreeItemCollapsibleState.None, connectionName, undefined, t.TRIGGER_NAME, tableName, `${t.TRIGGER_TYPE} ${t.TRIGGERING_EVENT} [${t.STATUS}]`));
+    async getTriggerNodes(tableName, connectionName, owner) {
+        const triggers = await this.oracleService.getTriggers(tableName, connectionName, owner);
+        return triggers.map((t) => new treeItems_1.OracleTreeItem(t.TRIGGER_NAME, 'table-trigger', vscode.TreeItemCollapsibleState.None, connectionName, owner, t.TRIGGER_NAME, tableName, `${t.TRIGGER_TYPE} ${t.TRIGGERING_EVENT} [${t.STATUS}]`));
     }
-    async getGrantNodes(tableName, connectionName) {
-        const grants = await this.oracleService.getGrants(tableName, connectionName);
-        return grants.map((g) => new treeItems_1.OracleTreeItem(`${g.GRANTEE} → ${g.PRIVILEGE}`, 'grant', vscode.TreeItemCollapsibleState.None, connectionName, undefined, undefined, tableName, g.GRANTABLE === 'YES' ? 'WITH GRANT OPTION' : undefined));
+    async getGrantNodes(tableName, connectionName, owner) {
+        const grants = await this.oracleService.getGrants(tableName, connectionName, owner);
+        return grants.map((g) => new treeItems_1.OracleTreeItem(`${g.GRANTEE} → ${g.PRIVILEGE}`, 'grant', vscode.TreeItemCollapsibleState.None, connectionName, owner, undefined, tableName, g.GRANTABLE === 'YES' ? 'WITH GRANT OPTION' : undefined));
     }
 }
 exports.ObjectBrowserProvider = ObjectBrowserProvider;

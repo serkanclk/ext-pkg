@@ -451,7 +451,7 @@ function activate(context) {
             };
             const objType = typeMap[item.objectType] || 'PROCEDURE';
             try {
-                const source = await oracleService.getObjectSource(item.objectName, objType, item.connectionName);
+                const source = await oracleService.getObjectSource(item.objectName, objType, item.connectionName, item.schemaName);
                 if (source) {
                     const doc = await vscode.workspace.openTextDocument({
                         language: 'oraclesql',

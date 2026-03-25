@@ -172,7 +172,7 @@ class ObjectViewerPanel {
         try {
             if (tabId === 'columns') {
                 if (['TABLE', 'VIEW', 'MATERIALIZED VIEW'].includes(this.currentObjectType)) {
-                    const columns = await oracleService.getTableColumns(this.currentObjectName, this.currentConnectionName);
+                    const columns = await oracleService.getTableColumns(this.currentObjectName, this.currentConnectionName, this.currentSchemaName);
                     this.panel?.webview.postMessage({ type: 'renderColumns', columns });
                 }
                 else {
@@ -181,7 +181,10 @@ class ObjectViewerPanel {
             }
             else if (tabId === 'data') {
                 if (['TABLE', 'VIEW', 'MATERIALIZED VIEW'].includes(this.currentObjectType)) {
-                    const sql = `SELECT * FROM "${this.currentObjectName}"`;
+                    const qualifiedName = this.currentSchemaName
+                        ? `"${this.currentSchemaName}"."${this.currentObjectName}"`
+                        : `"${this.currentObjectName}"`;
+                    const sql = `SELECT * FROM ${qualifiedName}`;
                     // Fetch first chunk
                     const config = vscode.workspace.getConfiguration('ingSql');
                     const batchSize = config.get('resultGrid.maxRows', 100);
@@ -203,15 +206,15 @@ class ObjectViewerPanel {
                 }
             }
             else if (tabId === 'constraints') {
-                const constraints = await oracleService.getConstraints(this.currentObjectName, this.currentConnectionName);
+                const constraints = await oracleService.getConstraints(this.currentObjectName, this.currentConnectionName, this.currentSchemaName);
                 this.panel?.webview.postMessage({ type: 'renderConstraints', constraints });
             }
             else if (tabId === 'indexes') {
-                const indexes = await oracleService.getIndexes(this.currentObjectName, this.currentConnectionName);
+                const indexes = await oracleService.getIndexes(this.currentObjectName, this.currentConnectionName, this.currentSchemaName);
                 this.panel?.webview.postMessage({ type: 'renderIndexes', indexes });
             }
             else if (tabId === 'ddl') {
-                const ddl = await oracleService.getObjectDDL(this.currentObjectName, this.currentObjectType, this.currentConnectionName);
+                const ddl = await oracleService.getObjectDDL(this.currentObjectName, this.currentObjectType, this.currentConnectionName, this.currentSchemaName);
                 this.panel?.webview.postMessage({ type: 'renderDdl', ddl: ddl || 'No DDL available.' });
             }
             else if (tabId === 'dependencies') {

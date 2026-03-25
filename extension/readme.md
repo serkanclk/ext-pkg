@@ -45,16 +45,29 @@ A professional Oracle SQL Developer clone for Visual Studio Code, optimized for 
 ## 🛡️ Audit Log Details
 The auditing system is hardcoded for maximum security. It records hostname, user, connection, format, and content metadata for every export. Logs are transmitted to `http://dwh-logger-api.athena.svc.cluster.local`.
 
-## 📦 Distribution Filenames (V2.4.2)
+## 📦 Distribution Filenames (V2.4.5)
 
 | Version | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
-| **Full** | `ing-sql-linux-x64-2.4.2.vsix` | `ing-sql-darwin-arm64-2.4.2.vsix` |
-| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.4.2.vsix` | `ing-sql-intl-darwin-arm64-2.4.2.vsix` |
-| **Restricted** | `ing-sql-restricted-linux-x64-2.4.2.vsix` | `ing-sql-restricted-darwin-arm64-2.4.2.vsix` |
-| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.4.2.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.4.2.vsix` |
+| **Full** | `ing-sql-linux-x64-2.4.5.vsix` | `ing-sql-darwin-arm64-2.4.5.vsix` |
+| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.4.5.vsix` | `ing-sql-intl-darwin-arm64-2.4.5.vsix` |
+| **Restricted** | `ing-sql-restricted-linux-x64-2.4.5.vsix` | `ing-sql-restricted-darwin-arm64-2.4.5.vsix` |
+| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.4.5.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.4.5.vsix` |
 
 ## 📋 Changelog
+
+### v2.4.5 — Other Users: Match Oracle SQL Developer
+- **Fixed**: Object listing uses `ALL_OBJECTS` for all types (procedures, packages, functions now listed correctly)
+- **Fixed**: Tree sub-categories (Columns, Constraints, Indexes, Triggers, Grants) pass schema owner throughout
+- **Fixed**: Schema owner propagated through entire tree chain for consistent cross-schema browsing
+
+### v2.4.4 — Other Users Full Object Support
+- **Fixed**: Open Data, Columns, Constraints, Indexes, DDL, Source — all now work for Other Users' schemas
+- **Fixed**: Procedures, functions, packages listed correctly via `ALL_SOURCE` with schema owner
+- **Fixed**: Data queries use schema-qualified names (`"SCHEMA"."TABLE"`)
+
+### v2.4.3 — Fix Pinned Schema Persistence
+- **Fixed**: Declared `ingSql.pinnedSchemas` in `contributes.configuration` so VS Code properly persists pinned schemas
 
 ### v2.4.2 — Persistent Schema Storage
 - **Improved**: Pinned schemas now stored in VS Code user settings (like connections) — survives extension uninstall/reinstall

@@ -2,7 +2,7 @@
   "name": "ing-sql",
   "displayName": "ING SQL",
   "description": "Oracle SQL Developer for VS Code (ING Specific)",
-  "version": "2.4.2",
+  "version": "2.4.5",
   "publisher": "ing-sql",
   "engines": {
     "vscode": "^1.85.0"
@@ -498,6 +498,11 @@
           "type": "array",
           "default": [],
           "description": "Database connections"
+        },
+        "ingSql.pinnedSchemas": {
+          "type": "object",
+          "default": {},
+          "description": "Pinned schemas per connection for Other Users browser"
         },
         "ingSql.results.location": {
           "type": "string",

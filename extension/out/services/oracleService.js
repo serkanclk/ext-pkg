@@ -485,36 +485,22 @@ class OracleService {
     async getSchemaObjectsForOwner(objectType, owner, connectionName) {
         const conn = await this.getConnection(connectionName);
         try {
-            let sql;
-            let binds;
-            if (['PROCEDURE', 'FUNCTION', 'PACKAGE'].includes(objectType)) {
-                // ALL_SOURCE has the broadest visibility for PL/SQL objects.
-                // It shows source for any object the user can see, regardless of grants.
-                // We use DISTINCT NAME since ALL_SOURCE has one row per source line.
-                sql = `
-                    SELECT DISTINCT s.OWNER, s.NAME AS OBJECT_NAME, s.TYPE AS OBJECT_TYPE,
-                           NVL(
-                               (SELECT ao.STATUS FROM ALL_OBJECTS ao
-                                WHERE ao.OWNER = s.OWNER AND ao.OBJECT_NAME = s.NAME
-                                AND ao.OBJECT_TYPE = s.TYPE AND ROWNUM = 1),
-                               'VALID'
-                           ) AS STATUS
-                    FROM ALL_SOURCE s
-                    WHERE s.OWNER = :owner
-                    AND s.TYPE = :type
-                    ORDER BY s.NAME
-                `;
-                binds = { owner, type: objectType };
-            }
-            else {
-                sql = `
-                    SELECT OWNER, OBJECT_NAME, OBJECT_TYPE, STATUS, CREATED, LAST_DDL_TIME
-                    FROM ALL_OBJECTS
-                    WHERE OWNER = :owner
-                    AND OBJECT_TYPE = :type
-                    ORDER BY OBJECT_NAME
-                `;
-                binds = { owner, type: objectType };
+            // Use ALL_OBJECTS for all types — matches Oracle SQL Developer behaviour.
+            // ALL_OBJECTS shows every object the user has ANY privilege on (SELECT, EXECUTE, etc).
+            // For PACKAGE, filter out PACKAGE BODY since those are shown as part of the package.
+            const typeClause = objectType === 'PACKAGE'
+                ? `AND OBJECT_TYPE = 'PACKAGE'`
+                : `AND OBJECT_TYPE = :type`;
+            const sql = `
+                SELECT OWNER, OBJECT_NAME, OBJECT_TYPE, STATUS, CREATED, LAST_DDL_TIME
+                FROM ALL_OBJECTS
+                WHERE OWNER = :owner
+                ${typeClause}
+                ORDER BY OBJECT_NAME
+            `;
+            const binds = { owner };
+            if (objectType !== 'PACKAGE') {
+                binds.type = objectType;
             }
             const result = await conn.execute(sql, binds, {
                 outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
@@ -532,9 +518,10 @@ class OracleService {
             await conn.close();
         }
     }
-    async getTableColumns(tableName, connectionName) {
+    async getTableColumns(tableName, connectionName, owner) {
         const conn = await this.getConnection(connectionName);
         try {
+            const ownerClause = owner ? `c.OWNER = :owner` : `c.OWNER = USER`;
             const sql = `
                 SELECT c.COLUMN_NAME, c.DATA_TYPE, c.DATA_LENGTH, c.DATA_PRECISION,
                        c.DATA_SCALE, c.NULLABLE, c.DATA_DEFAULT, c.COLUMN_ID,
@@ -543,10 +530,14 @@ class OracleService {
                 LEFT JOIN ALL_COL_COMMENTS cc
                     ON cc.OWNER = c.OWNER AND cc.TABLE_NAME = c.TABLE_NAME
                     AND cc.COLUMN_NAME = c.COLUMN_NAME
-                WHERE c.OWNER = USER AND c.TABLE_NAME = :tableName
+                WHERE ${ownerClause} AND c.TABLE_NAME = :tableName
                 ORDER BY c.COLUMN_ID
             `;
-            const result = await conn.execute(sql, { tableName }, {
+            const binds = { tableName };
+            if (owner) {
+                binds.owner = owner;
+            }
+            const result = await conn.execute(sql, binds, {
                 outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
             });
             return (result.rows || []).map(row => ({
@@ -565,9 +556,10 @@ class OracleService {
             await conn.close();
         }
     }
-    async getConstraints(tableName, connectionName) {
+    async getConstraints(tableName, connectionName, owner) {
         const conn = await this.getConnection(connectionName);
         try {
+            const ownerClause = owner ? `c.OWNER = :owner` : `c.OWNER = USER`;
             const sql = `
                 SELECT c.CONSTRAINT_NAME, c.CONSTRAINT_TYPE, c.STATUS, c.DELETE_RULE,
                        c.R_CONSTRAINT_NAME,
@@ -576,12 +568,16 @@ class OracleService {
                 FROM ALL_CONSTRAINTS c
                 JOIN ALL_CONS_COLUMNS cc ON cc.CONSTRAINT_NAME = c.CONSTRAINT_NAME AND cc.OWNER = c.OWNER
                 LEFT JOIN ALL_CONSTRAINTS r ON r.CONSTRAINT_NAME = c.R_CONSTRAINT_NAME AND r.OWNER = c.OWNER
-                WHERE c.OWNER = USER AND c.TABLE_NAME = :tableName
+                WHERE ${ownerClause} AND c.TABLE_NAME = :tableName
                 GROUP BY c.CONSTRAINT_NAME, c.CONSTRAINT_TYPE, c.STATUS, c.DELETE_RULE,
                          c.R_CONSTRAINT_NAME, r.TABLE_NAME
                 ORDER BY c.CONSTRAINT_TYPE, c.CONSTRAINT_NAME
             `;
-            const result = await conn.execute(sql, { tableName }, {
+            const binds = { tableName };
+            if (owner) {
+                binds.owner = owner;
+            }
+            const result = await conn.execute(sql, binds, {
                 outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
             });
             return (result.rows || []).map(row => ({
@@ -597,19 +593,24 @@ class OracleService {
             await conn.close();
         }
     }
-    async getIndexes(tableName, connectionName) {
+    async getIndexes(tableName, connectionName, owner) {
         const conn = await this.getConnection(connectionName);
         try {
+            const ownerClause = owner ? `i.OWNER = :owner` : `i.OWNER = USER`;
             const sql = `
                 SELECT i.INDEX_NAME, i.INDEX_TYPE, i.UNIQUENESS, i.STATUS, i.TABLESPACE_NAME,
                        LISTAGG(ic.COLUMN_NAME, ', ') WITHIN GROUP (ORDER BY ic.COLUMN_POSITION) AS COLUMNS
                 FROM ALL_INDEXES i
                 JOIN ALL_IND_COLUMNS ic ON ic.INDEX_NAME = i.INDEX_NAME AND ic.INDEX_OWNER = i.OWNER
-                WHERE i.OWNER = USER AND i.TABLE_NAME = :tableName
+                WHERE ${ownerClause} AND i.TABLE_NAME = :tableName
                 GROUP BY i.INDEX_NAME, i.INDEX_TYPE, i.UNIQUENESS, i.STATUS, i.TABLESPACE_NAME
                 ORDER BY i.INDEX_NAME
             `;
-            const result = await conn.execute(sql, { tableName }, {
+            const binds = { tableName };
+            if (owner) {
+                binds.owner = owner;
+            }
+            const result = await conn.execute(sql, binds, {
                 outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
             });
             return (result.rows || []).map(row => ({
@@ -625,16 +626,21 @@ class OracleService {
             await conn.close();
         }
     }
-    async getGrants(tableName, connectionName) {
+    async getGrants(tableName, connectionName, owner) {
         const conn = await this.getConnection(connectionName);
         try {
+            const ownerClause = owner ? `TABLE_SCHEMA = :owner` : `TABLE_SCHEMA = USER`;
             const sql = `
                 SELECT GRANTEE, PRIVILEGE, GRANTABLE, GRANTOR
                 FROM ALL_TAB_PRIVS
-                WHERE TABLE_NAME = :tableName AND TABLE_SCHEMA = USER
+                WHERE TABLE_NAME = :tableName AND ${ownerClause}
                 ORDER BY GRANTEE, PRIVILEGE
             `;
-            const result = await conn.execute(sql, { tableName }, {
+            const binds = { tableName };
+            if (owner) {
+                binds.owner = owner;
+            }
+            const result = await conn.execute(sql, binds, {
                 outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
             });
             return (result.rows || []);
@@ -643,16 +649,21 @@ class OracleService {
             await conn.close();
         }
     }
-    async getTriggers(tableName, connectionName) {
+    async getTriggers(tableName, connectionName, owner) {
         const conn = await this.getConnection(connectionName);
         try {
+            const ownerClause = owner ? `OWNER = :owner` : `OWNER = USER`;
             const sql = `
                 SELECT TRIGGER_NAME, TRIGGER_TYPE, TRIGGERING_EVENT, STATUS, DESCRIPTION
                 FROM ALL_TRIGGERS
-                WHERE OWNER = USER AND TABLE_NAME = :tableName
+                WHERE ${ownerClause} AND TABLE_NAME = :tableName
                 ORDER BY TRIGGER_NAME
             `;
-            const result = await conn.execute(sql, { tableName }, {
+            const binds = { tableName };
+            if (owner) {
+                binds.owner = owner;
+            }
+            const result = await conn.execute(sql, binds, {
                 outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
             });
             return (result.rows || []);
@@ -661,15 +672,20 @@ class OracleService {
             await conn.close();
         }
     }
-    async getObjectSource(objectName, objectType, connectionName) {
+    async getObjectSource(objectName, objectType, connectionName, owner) {
         const conn = await this.getConnection(connectionName);
         try {
+            const ownerClause = owner ? `OWNER = :owner` : `OWNER = USER`;
             const sql = `
                 SELECT TEXT FROM ALL_SOURCE
-                WHERE OWNER = USER AND NAME = :name AND TYPE = :type
+                WHERE ${ownerClause} AND NAME = :name AND TYPE = :type
                 ORDER BY LINE
             `;
-            const result = await conn.execute(sql, { name: objectName, type: objectType }, {
+            const binds = { name: objectName, type: objectType };
+            if (owner) {
+                binds.owner = owner;
+            }
+            const result = await conn.execute(sql, binds, {
                 outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
             });
             return (result.rows || []).map(r => r.TEXT).join('');
@@ -678,11 +694,16 @@ class OracleService {
             await conn.close();
         }
     }
-    async getObjectDDL(objectName, objectType, connectionName) {
+    async getObjectDDL(objectName, objectType, connectionName, owner) {
         const conn = await this.getConnection(connectionName);
         try {
-            const sql = `SELECT DBMS_METADATA.GET_DDL(:type, :name, USER) AS DDL FROM DUAL`;
-            const result = await conn.execute(sql, { type: objectType, name: objectName }, {
+            const ownerExpr = owner ? `:owner` : `USER`;
+            const sql = `SELECT DBMS_METADATA.GET_DDL(:type, :name, ${ownerExpr}) AS DDL FROM DUAL`;
+            const binds = { type: objectType, name: objectName };
+            if (owner) {
+                binds.owner = owner;
+            }
+            const result = await conn.execute(sql, binds, {
                 outFormat: oracledb_1.default.OUT_FORMAT_OBJECT,
                 fetchInfo: { DDL: { type: oracledb_1.default.STRING } }
             });
