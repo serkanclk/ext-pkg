@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 	<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
 		<Metadata>
-			<Identity Language="en-US" Id="ing-sql-intl" Version="2.4.5" Publisher="ing-sql" TargetPlatform="linux-x64"/>
+			<Identity Language="en-US" Id="ing-sql-intl" Version="2.4.6" Publisher="ing-sql" TargetPlatform="linux-x64"/>
 			<DisplayName>ING SQL + Intellisense</DisplayName>
 			<Description xml:space="preserve">ING Oracle SQL Developer (Full + Intellisense)</Description>
 			<Tags>keybindings,oraclesql,OracleSQL,plsql,__ext_sql,__ext_osql,__ext_plsql,__ext_pls,__ext_pck,sql</Tags>

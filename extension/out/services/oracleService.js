@@ -478,33 +478,61 @@ class OracleService {
         }
     }
     /**
+     * Track whether the current session can access DBA_ views.
+     * null = not yet tested, true/false = cached result.
+     */
+    static dbaAccessCache = null;
+    /**
+     * Try a query with DBA_ view first; if fails, retry with ALL_ view.
+     * Caches the DBA access check so we only test once per session.
+     */
+    async queryWithDbaFallback(conn, dbaSql, allSql, binds, options) {
+        if (OracleService.dbaAccessCache === false) {
+            // Already know DBA_ fails — go straight to ALL_
+            return conn.execute(allSql, binds, options);
+        }
+        try {
+            const result = await conn.execute(dbaSql, binds, options);
+            OracleService.dbaAccessCache = true;
+            return result;
+        }
+        catch (err) {
+            // ORA-00942: table or view does not exist (no access to DBA_ view)
+            if (err.errorNum === 942 || (err.message && err.message.includes('ORA-00942'))) {
+                OracleService.dbaAccessCache = false;
+                return conn.execute(allSql, binds, options);
+            }
+            throw err;
+        }
+    }
+    /**
      * List objects of a given type owned by a specific schema.
-     * For PROCEDURE/FUNCTION/PACKAGE: uses ALL_SOURCE for broadest visibility,
-     * since ALL_OBJECTS may not show objects the user lacks direct grants on.
+     * Tries DBA_OBJECTS first (shows ALL objects), falls back to ALL_OBJECTS.
+     * This matches Oracle SQL Developer behaviour.
      */
     async getSchemaObjectsForOwner(objectType, owner, connectionName) {
         const conn = await this.getConnection(connectionName);
         try {
-            // Use ALL_OBJECTS for all types — matches Oracle SQL Developer behaviour.
-            // ALL_OBJECTS shows every object the user has ANY privilege on (SELECT, EXECUTE, etc).
-            // For PACKAGE, filter out PACKAGE BODY since those are shown as part of the package.
             const typeClause = objectType === 'PACKAGE'
                 ? `AND OBJECT_TYPE = 'PACKAGE'`
                 : `AND OBJECT_TYPE = :type`;
-            const sql = `
-                SELECT OWNER, OBJECT_NAME, OBJECT_TYPE, STATUS, CREATED, LAST_DDL_TIME
-                FROM ALL_OBJECTS
-                WHERE OWNER = :owner
-                ${typeClause}
-                ORDER BY OBJECT_NAME
-            `;
             const binds = { owner };
             if (objectType !== 'PACKAGE') {
                 binds.type = objectType;
             }
-            const result = await conn.execute(sql, binds, {
-                outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
-            });
+            const dbaSql = `
+                SELECT OWNER, OBJECT_NAME, OBJECT_TYPE, STATUS, CREATED, LAST_DDL_TIME
+                FROM DBA_OBJECTS
+                WHERE OWNER = :owner ${typeClause}
+                ORDER BY OBJECT_NAME
+            `;
+            const allSql = `
+                SELECT OWNER, OBJECT_NAME, OBJECT_TYPE, STATUS, CREATED, LAST_DDL_TIME
+                FROM ALL_OBJECTS
+                WHERE OWNER = :owner ${typeClause}
+                ORDER BY OBJECT_NAME
+            `;
+            const result = await this.queryWithDbaFallback(conn, dbaSql, allSql, binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT });
             return (result.rows || []).map(row => ({
                 owner: row.OWNER,
                 name: row.OBJECT_NAME,
@@ -522,24 +550,24 @@ class OracleService {
         const conn = await this.getConnection(connectionName);
         try {
             const ownerClause = owner ? `c.OWNER = :owner` : `c.OWNER = USER`;
-            const sql = `
+            const binds = { tableName };
+            if (owner) {
+                binds.owner = owner;
+            }
+            const makeSql = (prefix) => `
                 SELECT c.COLUMN_NAME, c.DATA_TYPE, c.DATA_LENGTH, c.DATA_PRECISION,
                        c.DATA_SCALE, c.NULLABLE, c.DATA_DEFAULT, c.COLUMN_ID,
                        cc.COMMENTS
-                FROM ALL_TAB_COLUMNS c
-                LEFT JOIN ALL_COL_COMMENTS cc
+                FROM ${prefix}_TAB_COLUMNS c
+                LEFT JOIN ${prefix}_COL_COMMENTS cc
                     ON cc.OWNER = c.OWNER AND cc.TABLE_NAME = c.TABLE_NAME
                     AND cc.COLUMN_NAME = c.COLUMN_NAME
                 WHERE ${ownerClause} AND c.TABLE_NAME = :tableName
                 ORDER BY c.COLUMN_ID
             `;
-            const binds = { tableName };
-            if (owner) {
-                binds.owner = owner;
-            }
-            const result = await conn.execute(sql, binds, {
-                outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
-            });
+            const result = owner
+                ? await this.queryWithDbaFallback(conn, makeSql('DBA'), makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT })
+                : await conn.execute(makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT });
             return (result.rows || []).map(row => ({
                 name: row.COLUMN_NAME,
                 dataType: row.DATA_TYPE,
@@ -560,26 +588,26 @@ class OracleService {
         const conn = await this.getConnection(connectionName);
         try {
             const ownerClause = owner ? `c.OWNER = :owner` : `c.OWNER = USER`;
-            const sql = `
+            const binds = { tableName };
+            if (owner) {
+                binds.owner = owner;
+            }
+            const makeSql = (prefix) => `
                 SELECT c.CONSTRAINT_NAME, c.CONSTRAINT_TYPE, c.STATUS, c.DELETE_RULE,
                        c.R_CONSTRAINT_NAME,
                        LISTAGG(cc.COLUMN_NAME, ', ') WITHIN GROUP (ORDER BY cc.POSITION) AS COLUMNS,
                        r.TABLE_NAME AS REF_TABLE
-                FROM ALL_CONSTRAINTS c
-                JOIN ALL_CONS_COLUMNS cc ON cc.CONSTRAINT_NAME = c.CONSTRAINT_NAME AND cc.OWNER = c.OWNER
-                LEFT JOIN ALL_CONSTRAINTS r ON r.CONSTRAINT_NAME = c.R_CONSTRAINT_NAME AND r.OWNER = c.OWNER
+                FROM ${prefix}_CONSTRAINTS c
+                JOIN ${prefix}_CONS_COLUMNS cc ON cc.CONSTRAINT_NAME = c.CONSTRAINT_NAME AND cc.OWNER = c.OWNER
+                LEFT JOIN ${prefix}_CONSTRAINTS r ON r.CONSTRAINT_NAME = c.R_CONSTRAINT_NAME AND r.OWNER = c.OWNER
                 WHERE ${ownerClause} AND c.TABLE_NAME = :tableName
                 GROUP BY c.CONSTRAINT_NAME, c.CONSTRAINT_TYPE, c.STATUS, c.DELETE_RULE,
                          c.R_CONSTRAINT_NAME, r.TABLE_NAME
                 ORDER BY c.CONSTRAINT_TYPE, c.CONSTRAINT_NAME
             `;
-            const binds = { tableName };
-            if (owner) {
-                binds.owner = owner;
-            }
-            const result = await conn.execute(sql, binds, {
-                outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
-            });
+            const result = owner
+                ? await this.queryWithDbaFallback(conn, makeSql('DBA'), makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT })
+                : await conn.execute(makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT });
             return (result.rows || []).map(row => ({
                 name: row.CONSTRAINT_NAME,
                 type: this.constraintTypeName(row.CONSTRAINT_TYPE),
@@ -597,22 +625,22 @@ class OracleService {
         const conn = await this.getConnection(connectionName);
         try {
             const ownerClause = owner ? `i.OWNER = :owner` : `i.OWNER = USER`;
-            const sql = `
-                SELECT i.INDEX_NAME, i.INDEX_TYPE, i.UNIQUENESS, i.STATUS, i.TABLESPACE_NAME,
-                       LISTAGG(ic.COLUMN_NAME, ', ') WITHIN GROUP (ORDER BY ic.COLUMN_POSITION) AS COLUMNS
-                FROM ALL_INDEXES i
-                JOIN ALL_IND_COLUMNS ic ON ic.INDEX_NAME = i.INDEX_NAME AND ic.INDEX_OWNER = i.OWNER
-                WHERE ${ownerClause} AND i.TABLE_NAME = :tableName
-                GROUP BY i.INDEX_NAME, i.INDEX_TYPE, i.UNIQUENESS, i.STATUS, i.TABLESPACE_NAME
-                ORDER BY i.INDEX_NAME
-            `;
             const binds = { tableName };
             if (owner) {
                 binds.owner = owner;
             }
-            const result = await conn.execute(sql, binds, {
-                outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
-            });
+            const makeSql = (prefix) => `
+                SELECT i.INDEX_NAME, i.INDEX_TYPE, i.UNIQUENESS, i.STATUS, i.TABLESPACE_NAME,
+                       LISTAGG(ic.COLUMN_NAME, ', ') WITHIN GROUP (ORDER BY ic.COLUMN_POSITION) AS COLUMNS
+                FROM ${prefix}_INDEXES i
+                JOIN ${prefix}_IND_COLUMNS ic ON ic.INDEX_NAME = i.INDEX_NAME AND ic.INDEX_OWNER = i.OWNER
+                WHERE ${ownerClause} AND i.TABLE_NAME = :tableName
+                GROUP BY i.INDEX_NAME, i.INDEX_TYPE, i.UNIQUENESS, i.STATUS, i.TABLESPACE_NAME
+                ORDER BY i.INDEX_NAME
+            `;
+            const result = owner
+                ? await this.queryWithDbaFallback(conn, makeSql('DBA'), makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT })
+                : await conn.execute(makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT });
             return (result.rows || []).map(row => ({
                 name: row.INDEX_NAME,
                 type: row.INDEX_TYPE,
@@ -676,18 +704,18 @@ class OracleService {
         const conn = await this.getConnection(connectionName);
         try {
             const ownerClause = owner ? `OWNER = :owner` : `OWNER = USER`;
-            const sql = `
-                SELECT TEXT FROM ALL_SOURCE
-                WHERE ${ownerClause} AND NAME = :name AND TYPE = :type
-                ORDER BY LINE
-            `;
             const binds = { name: objectName, type: objectType };
             if (owner) {
                 binds.owner = owner;
             }
-            const result = await conn.execute(sql, binds, {
-                outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
-            });
+            const makeSql = (prefix) => `
+                SELECT TEXT FROM ${prefix}_SOURCE
+                WHERE ${ownerClause} AND NAME = :name AND TYPE = :type
+                ORDER BY LINE
+            `;
+            const result = owner
+                ? await this.queryWithDbaFallback(conn, makeSql('DBA'), makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT })
+                : await conn.execute(makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT });
             return (result.rows || []).map(r => r.TEXT).join('');
         }
         finally {
