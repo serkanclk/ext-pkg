@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ImportWizardPanel = void 0;
 const vscode = __importStar(require("vscode"));
 const fs = __importStar(require("fs"));
+const iconv = __importStar(require("iconv-lite"));
 class ImportWizardPanel {
     extensionUri;
     panel;
@@ -92,8 +93,9 @@ class ImportWizardPanel {
     }
     async handleParseFile(msg) {
         try {
-            const { filePath, delimiter, leftEnclosure, hasHeader, skipRows, previewRowLimit } = msg;
+            const { filePath, delimiter, leftEnclosure, hasHeader, skipRows, previewRowLimit, encoding } = msg;
             const ext = filePath.split('.').pop()?.toLowerCase();
+            const fileEncoding = encoding || 'UTF-8';
             let headers = [];
             let rows = [];
             if (ext === 'xlsx') {
@@ -122,7 +124,8 @@ class ImportWizardPanel {
             }
             else {
                 // CSV/TSV parsing
-                const content = fs.readFileSync(filePath, 'utf-8');
+                const rawBuffer = fs.readFileSync(filePath);
+                const content = iconv.decode(rawBuffer, fileEncoding);
                 const lines = content.split(/\r?\n/).filter(l => l.trim().length > 0);
                 const delim = delimiter === '\\t' ? '\t' : delimiter;
                 const encl = leftEnclosure === 'none' ? '' : leftEnclosure;
@@ -441,8 +444,11 @@ class ImportWizardPanel {
             <label>Encoding</label>
             <select id="encoding">
                 <option value="UTF-8">UTF-8</option>
-                <option value="Latin1">Latin1</option>
-                <option value="ASCII">ASCII</option>
+                <option value="windows-1254">Windows-1254 (Turkish)</option>
+                <option value="ISO-8859-9">ISO 8859-9 (Latin-5 Turkish)</option>
+                <option value="latin1">Latin1 (ISO 8859-1)</option>
+                <option value="ascii">ASCII</option>
+                <option value="UTF-16LE">UTF-16 LE</option>
             </select>
         </div>
         <div class="form-group">
@@ -652,7 +658,8 @@ document.getElementById('previewBtn').addEventListener('click', () => {
         leftEnclosure: document.getElementById('leftEnclosure').value,
         hasHeader: document.getElementById('hasHeader').checked,
         skipRows: parseInt(document.getElementById('skipRows').value) || 0,
-        previewRowLimit: parseInt(document.getElementById('previewRowLimit').value) || 100
+        previewRowLimit: parseInt(document.getElementById('previewRowLimit').value) || 100,
+        encoding: document.getElementById('encoding').value
     });
 });
 

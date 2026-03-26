@@ -37,36 +37,24 @@ exports.SqlWorksheetCommands = void 0;
 const vscode = __importStar(require("vscode"));
 const oracleService_1 = require("../services/oracleService");
 const connectionManager_1 = require("../services/connectionManager");
+const queryResultsPanel_1 = require("../panels/queryResultsPanel");
 const worksheetSessionManager_js_1 = require("../services/worksheetSessionManager.js");
 class SqlWorksheetCommands {
     context;
     oracleService;
     connMgr;
-    resultsPanel;
+    extensionUri;
     historyProvider;
     statusBar;
     /** SQL*Plus-style DEFINE substitution variables (persist across statements) */
     defineVars = new Map();
-    constructor(context, resultsPanel, historyProvider, statusBar) {
+    constructor(context, historyProvider, statusBar) {
         this.context = context;
         this.oracleService = oracleService_1.OracleService.getInstance();
         this.connMgr = connectionManager_1.ConnectionManager.getInstance();
-        this.resultsPanel = resultsPanel;
+        this.extensionUri = context.extensionUri;
         this.historyProvider = historyProvider;
         this.statusBar = statusBar;
-        this.resultsPanel.setLoadMoreHandler(async (cursorId) => {
-            try {
-                this.resultsPanel.setLoadingMore(true);
-                const config = vscode.workspace.getConfiguration('ingSql');
-                const batchSize = config.get('resultGrid.maxRows', 100);
-                const { rows, hasMore } = await this.oracleService.fetchMoreRows(cursorId, batchSize);
-                this.resultsPanel.appendResults(rows, hasMore);
-            }
-            catch (err) {
-                vscode.window.showErrorMessage(`Failed to load more rows: ${err.message}`);
-                this.resultsPanel.setLoadingMore(false);
-            }
-        });
     }
     async newWorksheet(item) {
         let activeConn = this.connMgr.getActiveConnectionName();
@@ -96,7 +84,11 @@ class SqlWorksheetCommands {
             vscode.window.showWarningMessage('No SQL statement at cursor.');
             return;
         }
-        await this.executeSql(sql.trim());
+        const docUri = editor.document.uri.toString();
+        const docName = editor.document.fileName.split(/[\\/]/).pop() || 'Worksheet';
+        const panel = queryResultsPanel_1.QueryResultsPanel.getOrCreate(docUri, `Results — ${docName}`, this.extensionUri);
+        panel.clearResults();
+        await this.executeSql(sql.trim(), panel);
     }
     async executeScript() {
         const editor = vscode.window.activeTextEditor;
@@ -110,7 +102,10 @@ class SqlWorksheetCommands {
         }
         const fullText = editor.document.getText();
         const statements = this.splitStatements(fullText);
-        let totalTime = 0;
+        const docUri = editor.document.uri.toString();
+        const docName = editor.document.fileName.split(/[\\/]/).pop() || 'Worksheet';
+        const panel = queryResultsPanel_1.QueryResultsPanel.getOrCreate(docUri, `Results — ${docName}`, this.extensionUri);
+        panel.clearResults();
         let successCount = 0;
         let errorCount = 0;
         for (const stmt of statements) {
@@ -118,7 +113,7 @@ class SqlWorksheetCommands {
                 continue;
             }
             try {
-                await this.executeSql(stmt.trim());
+                await this.executeSql(stmt.trim(), panel);
                 successCount++;
             }
             catch (err) {
@@ -143,7 +138,9 @@ class SqlWorksheetCommands {
         }
         try {
             const plan = await this.oracleService.getExplainPlan(sql.trim());
-            this.resultsPanel.showExplainPlan(plan);
+            // Explain plan opens as its own standalone WebviewPanel
+            const panel = vscode.window.createWebviewPanel('ingSqlExplain', 'Explain Plan', { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, { enableScripts: true });
+            panel.webview.html = this.getExplainPlanHtml(plan);
         }
         catch (err) {
             vscode.window.showErrorMessage(`Explain Plan error: ${err.message}`);
@@ -346,7 +343,7 @@ class SqlWorksheetCommands {
         const dummyItem = new OracleTreeItem(objectName, 'table', (await import('vscode')).TreeItemCollapsibleState.None, connectionName, undefined, objectName);
         vscode.commands.executeCommand('ingSql.describeObject', dummyItem);
     }
-    async executeSql(sql) {
+    async executeSql(sql, panel) {
         // Strip trailing semicolons and PL/SQL '/' terminators
         // Oracle's programmatic API doesn't accept these (SQL*Plus convention only)
         sql = sql.replace(/[;\s/]+$/, '').trim();
@@ -366,13 +363,10 @@ class SqlWorksheetCommands {
             return;
         }
         // ── Substitute &var and &&var references ──
-        // Replace &varname (or &&varname) with the DEFINE'd value.
-        // Only substitute outside of single-quoted strings.
         if (this.defineVars.size > 0) {
             sql = this.applySubstitutionVars(sql);
         }
         // Detect bind variables — but ignore :names inside string literals.
-        // Strip single-quoted strings first so 'HH24:MI:SS' doesn't match :MI.
         const sqlNoStrings = sql.replace(/'[^']*'/g, "''");
         const bindVarRegex = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
         const bindNames = [];
@@ -417,9 +411,10 @@ class SqlWorksheetCommands {
                 const result = await this.oracleService.executeCursor(sql, binds, {
                     connection: sessionConn
                 });
-                // Show results in the bottom panel — matching Oracle SQL Developer layout
-                // where results appear below the SQL editor.
-                this.resultsPanel.showResults(result);
+                // Show results in the per-worksheet results panel
+                if (panel) {
+                    panel.addResult(result);
+                }
                 this.historyProvider.addEntry(sql, result.executionTime, result.rowCount);
                 this.statusBar.showSuccess(result.rowCount, result.executionTime);
             }
@@ -571,6 +566,36 @@ class SqlWorksheetCommands {
             const cleaned = s.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
             return cleaned.length > 0;
         });
+    }
+    getExplainPlanHtml(plan) {
+        const escapedPlan = plan.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return /*html*/ `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: var(--vscode-editor-font-family, 'Courier New', monospace);
+            font-size: var(--vscode-editor-font-size, 13px);
+            color: var(--vscode-foreground);
+            background: var(--vscode-editor-background);
+            padding: 16px;
+            white-space: pre;
+            overflow: auto;
+        }
+        .plan-title {
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 12px;
+            color: var(--vscode-textLink-foreground);
+        }
+    </style>
+</head>
+<body>
+<div class="plan-title">Execution Plan</div>
+${escapedPlan}
+</body>
+</html>`;
     }
 }
 exports.SqlWorksheetCommands = SqlWorksheetCommands;

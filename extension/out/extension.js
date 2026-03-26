@@ -47,7 +47,7 @@ const sqlHistoryProvider_1 = require("./providers/sqlHistoryProvider");
 const dbmsOutputProvider_1 = require("./providers/dbmsOutputProvider");
 const sqlSnippetsProvider_1 = require("./providers/sqlSnippetsProvider");
 const sqlWorksheet_1 = require("./commands/sqlWorksheet");
-const resultsPanel_1 = require("./panels/resultsPanel");
+const queryResultsPanel_1 = require("./panels/queryResultsPanel");
 const objectViewerPanel_1 = require("./panels/objectViewerPanel");
 const snippetEditorPanel_1 = require("./panels/snippetEditorPanel");
 const treeItems_1 = require("./models/treeItems");
@@ -72,12 +72,11 @@ function activate(context) {
         const sqlHistoryProvider = new sqlHistoryProvider_1.SqlHistoryProvider(context);
         const dbmsOutputProvider = new dbmsOutputProvider_1.DbmsOutputProvider();
         const sqlSnippetsProvider = new sqlSnippetsProvider_1.SqlSnippetsProvider(context);
-        const resultsPanel = new resultsPanel_1.ResultsPanel(context.extensionUri);
         const snippetEditorPanel = new snippetEditorPanel_1.SnippetEditorPanel(context.extensionUri);
         const sqlStatusBar = new sqlStatusBar_1.SqlStatusBar();
         context.subscriptions.push({ dispose: () => sqlStatusBar.dispose() });
         sqlStatusBar.showReady();
-        const sqlWorksheetCommands = new sqlWorksheet_1.SqlWorksheetCommands(context, resultsPanel, sqlHistoryProvider, sqlStatusBar);
+        const sqlWorksheetCommands = new sqlWorksheet_1.SqlWorksheetCommands(context, sqlHistoryProvider, sqlStatusBar);
         // ─── Object Viewer Management ───
         const objectViewers = new Map();
         function getObjectViewer(objectName, connectionName) {
@@ -123,9 +122,9 @@ function activate(context) {
         });
         // ─── Register Language Features ───
         const langSelector = { language: 'oraclesql', scheme: '*' };
-        context.subscriptions.push(vscode.languages.registerCompletionItemProvider(langSelector, sqlLanguageProvider), vscode.languages.registerHoverProvider(langSelector, sqlLanguageProvider), vscode.languages.registerDocumentFormattingEditProvider(langSelector, sqlLanguageProvider), vscode.window.registerWebviewViewProvider(resultsPanel_1.ResultsPanel.viewType, resultsPanel));
-        // ─── Setup Export Handler ───
-        resultsPanel.setExportHandler(async (data) => {
+        context.subscriptions.push(vscode.languages.registerCompletionItemProvider(langSelector, sqlLanguageProvider), vscode.languages.registerHoverProvider(langSelector, sqlLanguageProvider), vscode.languages.registerDocumentFormattingEditProvider(langSelector, sqlLanguageProvider));
+        // ─── Setup Export Handler (QueryResultsPanel — static) ───
+        queryResultsPanel_1.QueryResultsPanel.setExportHandler(async (data) => {
             const activeConn = connMgr.getActiveConnectionName();
             const activeProfile = connMgr.getActiveProfile();
             if (!activeConn || !activeProfile) {
@@ -623,7 +622,7 @@ function activate(context) {
             }
         });
         // ─── Disposables ───
-        context.subscriptions.push(objectBrowserView, sqlHistoryView, sqlSnippetsView, { dispose: () => connMgr.dispose() }, { dispose: () => resultsPanel.dispose() }, { dispose: () => dbmsOutputProvider.dispose() }, { dispose: () => auditLogService.dispose() });
+        context.subscriptions.push(objectBrowserView, sqlHistoryView, sqlSnippetsView, { dispose: () => connMgr.dispose() }, { dispose: () => dbmsOutputProvider.dispose() }, { dispose: () => auditLogService.dispose() });
         console.log('ING SQL extension activated successfully.');
     }
     catch (err) {

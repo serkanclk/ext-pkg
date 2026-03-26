@@ -45,16 +45,22 @@ A professional Oracle SQL Developer clone for Visual Studio Code, optimized for 
 ## 🛡️ Audit Log Details
 The auditing system is hardcoded for maximum security. It records hostname, user, connection, format, and content metadata for every export. Logs are transmitted to `http://dwh-logger-api.athena.svc.cluster.local`.
 
-## 📦 Distribution Filenames (V2.4.6)
+## 📦 Distribution Filenames (V2.5.0)
 
 | Version | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
-| **Full** | `ing-sql-linux-x64-2.4.6.vsix` | `ing-sql-darwin-arm64-2.4.6.vsix` |
-| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.4.6.vsix` | `ing-sql-intl-darwin-arm64-2.4.6.vsix` |
-| **Restricted** | `ing-sql-restricted-linux-x64-2.4.6.vsix` | `ing-sql-restricted-darwin-arm64-2.4.6.vsix` |
-| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.4.6.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.4.6.vsix` |
+| **Full** | `ing-sql-linux-x64-2.5.0.vsix` | `ing-sql-darwin-arm64-2.5.0.vsix` |
+| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.5.0.vsix` | `ing-sql-intl-darwin-arm64-2.5.0.vsix` |
+| **Restricted** | `ing-sql-restricted-linux-x64-2.5.0.vsix` | `ing-sql-restricted-darwin-arm64-2.5.0.vsix` |
+| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.5.0.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.5.0.vsix` |
 
 ## 📋 Changelog
+
+### v2.5.0 — Multi-Query Results + Import Encoding
+- **Multi-query execution**: Write multiple SELECTs separated by `;`, execute with F5, each gets its own result tab (Query 1, Query 2, etc.)
+- **Per-worksheet results**: Each SQL worksheet gets its own results panel — switch worksheets, switch results
+- **Windows-1254 encoding**: Import wizard now supports Windows-1254 (Turkish), ISO 8859-9, UTF-16 LE, in addition to UTF-8/Latin1/ASCII
+- **Architecture**: Replaced sidebar `WebviewViewProvider` with `WebviewPanel` editor tabs for results
 
 ### v2.4.6 — DBA_ Views for Other Users (Root Cause Fix)
 - **Root cause**: `ALL_OBJECTS` only shows 76/110 tables, 0/1816 procedures — it's privilege-limited

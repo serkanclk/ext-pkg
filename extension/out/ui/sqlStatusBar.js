@@ -49,7 +49,7 @@ class SqlStatusBar {
     constructor() {
         this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100 // high priority so it's visible
         );
-        this.item.command = 'ingSql.resultsView.focus';
+        this.item.command = undefined;
         this.item.tooltip = 'Click to show results';
     }
     /** Call when a query starts executing */
@@ -77,7 +77,7 @@ class SqlStatusBar {
         this.item.text = `$(check) ${rowCount} row(s) · ${timeStr}`;
         this.item.backgroundColor = undefined;
         this.item.color = '#3fb950'; // green
-        this.item.command = 'ingSql.resultsView.focus';
+        this.item.command = undefined;
         this.item.tooltip = `Query completed: ${rowCount} row(s) in ${timeStr}. Click to show results.`;
         this.item.show();
         // Auto-fade after 15 seconds
@@ -99,7 +99,7 @@ class SqlStatusBar {
         this.item.text = `$(error) ${shortError} · ${timeStr}`;
         this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
         this.item.color = undefined;
-        this.item.command = 'ingSql.resultsView.focus';
+        this.item.command = undefined;
         this.item.tooltip = `SQL Error: ${errorMessage}`;
         this.item.show();
         // Keep error visible — no auto-fade (clears on next query)
@@ -111,7 +111,7 @@ class SqlStatusBar {
         this.item.text = `$(circle-slash) Query cancelled · ${elapsed}s`;
         this.item.backgroundColor = undefined;
         this.item.color = '#d29922'; // orange/yellow
-        this.item.command = 'ingSql.resultsView.focus';
+        this.item.command = undefined;
         this.item.tooltip = 'Query was cancelled by user';
         this.item.show();
         this.fadeTimeout = setTimeout(() => {

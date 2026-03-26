@@ -2,7 +2,7 @@
   "name": "ing-sql",
   "displayName": "ING SQL",
   "description": "Oracle SQL Developer for VS Code (ING Specific)",
-  "version": "2.4.6",
+  "version": "2.5.0",
   "publisher": "ing-sql",
   "engines": {
     "vscode": "^1.85.0"
@@ -23,13 +23,6 @@
           "title": "ING SQL",
           "icon": "resources/icons/ing-sql.svg"
         }
-      ],
-      "panel": [
-        {
-          "id": "ingSqlPanel",
-          "title": "ING SQL",
-          "icon": "$(database)"
-        }
       ]
     },
     "views": {
@@ -48,15 +41,6 @@
           "id": "ingSql.snippets",
           "name": "SQL Snippets",
           "icon": "$(symbol-field)"
-        }
-      ],
-      "ingSqlPanel": [
-        {
-          "type": "webview",
-          "id": "ingSql.resultsView",
-          "name": "Query Results",
-          "contextualTitle": "Query Results",
-          "icon": "$(output)"
         }
       ]
     },
@@ -587,7 +571,8 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "oracledb": "^6.3.0",
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "iconv-lite": "^0.7.2",
+    "oracledb": "^6.3.0"
   }
 }
