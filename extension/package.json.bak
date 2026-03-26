@@ -2,7 +2,7 @@
   "name": "ing-sql",
   "displayName": "ING SQL",
   "description": "Oracle SQL Developer for VS Code (ING Specific)",
-  "version": "2.5.0",
+  "version": "2.5.12",
   "publisher": "ing-sql",
   "engines": {
     "vscode": "^1.85.0"
@@ -23,6 +23,13 @@
           "title": "ING SQL",
           "icon": "resources/icons/ing-sql.svg"
         }
+      ],
+      "panel": [
+        {
+          "id": "ingSqlPanel",
+          "title": "Query Results",
+          "icon": "$(output)"
+        }
       ]
     },
     "views": {
@@ -41,6 +48,15 @@
           "id": "ingSql.snippets",
           "name": "SQL Snippets",
           "icon": "$(symbol-field)"
+        }
+      ],
+      "ingSqlPanel": [
+        {
+          "type": "webview",
+          "id": "ingSql.resultsView",
+          "name": "Query Results",
+          "contextualTitle": "Query Results",
+          "icon": "$(output)"
         }
       ]
     },
@@ -85,6 +101,12 @@
         "title": "New SQL Worksheet",
         "category": "Oracle",
         "icon": "$(new-file)"
+      },
+      {
+        "command": "ingSql.copyErrorMessage",
+        "title": "Copy Error Message",
+        "category": "Oracle",
+        "icon": "$(copy)"
       },
       {
         "command": "ingSql.executeQuery",
@@ -377,6 +399,16 @@
           "command": "ingSql.removeOtherSchema",
           "when": "view == ingSql.objectBrowser && viewItem == other-schema",
           "group": "schema@1"
+        },
+        {
+          "command": "ingSql.copyErrorMessage",
+          "when": "view == ingSql.sqlHistory && viewItem == sqlHistoryError",
+          "group": "inline@1"
+        },
+        {
+          "command": "ingSql.copyErrorMessage",
+          "when": "view == ingSql.sqlHistory && viewItem == sqlHistoryError",
+          "group": "history@1"
         }
       ],
       "editor/title": [

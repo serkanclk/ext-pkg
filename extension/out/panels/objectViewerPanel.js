@@ -221,14 +221,30 @@ class ObjectViewerPanel {
                 const { dependencies, referencedBy } = await oracleService.getDependencies(this.currentObjectName, this.currentConnectionName, this.currentSchemaName);
                 this.panel?.webview.postMessage({ type: 'renderDependencies', dependencies, referencedBy });
             }
-            else if (['stats', 'grants', 'triggers', 'flashback', 'details', 'partitions', 'json'].includes(tabId)) {
-                // Return a generic success to clear loader
-                const type = `render${tabId.charAt(0).toUpperCase()}${tabId.slice(1)}`;
-                this.panel?.webview.postMessage({ type });
+            else if (tabId === 'stats') {
+                const stats = await oracleService.getStatistics(this.currentObjectName, this.currentConnectionName, this.currentSchemaName);
+                this.panel?.webview.postMessage({ type: 'renderStats', stats });
+            }
+            else if (tabId === 'grants') {
+                const grants = await oracleService.getGrants(this.currentObjectName, this.currentConnectionName, this.currentSchemaName);
+                this.panel?.webview.postMessage({ type: 'renderGrants', grants });
+            }
+            else if (tabId === 'triggers') {
+                const triggers = await oracleService.getTriggers(this.currentObjectName, this.currentConnectionName, this.currentSchemaName);
+                this.panel?.webview.postMessage({ type: 'renderTriggers', triggers });
+            }
+            else if (tabId === 'details') {
+                const details = await oracleService.getDetails(this.currentObjectName, this.currentConnectionName, this.currentSchemaName);
+                this.panel?.webview.postMessage({ type: 'renderDetails', details });
+            }
+            else if (tabId === 'partitions') {
+                const partitions = await oracleService.getPartitions(this.currentObjectName, this.currentConnectionName, this.currentSchemaName);
+                this.panel?.webview.postMessage({ type: 'renderPartitions', partitions });
             }
         }
         catch (err) {
-            throw err;
+            vscode.window.showErrorMessage(`Object Viewer Error: ${err.message}`);
+            this.panel?.webview.postMessage({ type: 'error', error: err.message, tabId: tabId });
         }
     }
     getHtmlBase(hideTabs = false) {
@@ -502,12 +518,10 @@ class ObjectViewerPanel {
         <div class="tab" data-target="grants">Grants</div>
         <div class="tab" data-target="stats">Statistics</div>
         <div class="tab" data-target="triggers">Triggers</div>
-        <div class="tab" data-target="flashback">Flashback</div>
         <div class="tab" data-target="dependencies">Dependencies</div>
         <div class="tab" data-target="details">Details</div>
         <div class="tab" data-target="partitions">Partitions</div>
         <div class="tab" data-target="indexes">Indexes</div>
-        <div class="tab" data-target="json">JSON Schema</div>
         <div class="tab" data-target="ddl">SQL</div>
     </div>
 
@@ -538,17 +552,36 @@ class ObjectViewerPanel {
     </div>
 
     <!-- Grants Tab -->
-    <div id="grants" class="tab-content"><div class="generic-table-container"><p>Grants information will be displayed here.</p></div></div>
+    <div id="grants" class="tab-content">
+        <div class="generic-table-container">
+            <table>
+                <thead><tr><th>Grantee</th><th>Privilege</th><th>Grantable</th><th>Grantor</th></tr></thead>
+                <tbody id="grantsBody"></tbody>
+            </table>
+        </div>
+    </div>
 
     <!-- Statistics Tab -->
-    <div id="stats" class="tab-content"><div class="generic-table-container"><p>Statistics information will be displayed here.</p></div></div>
+    <div id="stats" class="tab-content">
+        <div class="generic-table-container">
+            <table>
+                <thead><tr><th>Name</th><th>Value</th></tr></thead>
+                <tbody id="statsBody"></tbody>
+            </table>
+        </div>
+    </div>
 
     <!-- Triggers Tab -->
-    <div id="triggers" class="tab-content"><div class="generic-table-container"><p>Triggers information will be displayed here.</p></div></div>
+    <div id="triggers" class="tab-content">
+        <div class="generic-table-container">
+            <table>
+                <thead><tr><th>Name</th><th>Type</th><th>Event</th><th>Status</th><th>Description</th></tr></thead>
+                <tbody id="triggersBody"></tbody>
+            </table>
+        </div>
+    </div>
 
     <!-- Flashback Tab -->
-    <div id="flashback" class="tab-content"><div class="generic-table-container"><p>Flashback information will be displayed here.</p></div></div>
-
     <!-- Indexes Tab -->
     <div id="indexes" class="tab-content">
         <div class="generic-table-container">
@@ -567,14 +600,26 @@ class ObjectViewerPanel {
     </div>
 
     <!-- Details Tab -->
-    <div id="details" class="tab-content"><div class="generic-table-container"><p>Object details will be displayed here.</p></div></div>
+    <div id="details" class="tab-content">
+        <div class="generic-table-container">
+            <table>
+                <thead><tr><th>Property</th><th>Value</th></tr></thead>
+                <tbody id="detailsBody"></tbody>
+            </table>
+        </div>
+    </div>
 
     <!-- Partitions Tab -->
-    <div id="partitions" class="tab-content"><div class="generic-table-container"><p>Partitions information will be displayed here.</p></div></div>
+    <div id="partitions" class="tab-content">
+        <div class="generic-table-container">
+            <table>
+                <thead><tr><th>Name</th><th>High Value</th><th>Tablespace</th><th>Logging</th><th>Rows</th><th>Last Analyzed</th></tr></thead>
+                <tbody id="partitionsBody"></tbody>
+            </table>
+        </div>
+    </div>
 
     <!-- JSON Schema Tab -->
-    <div id="json" class="tab-content"><div class="generic-table-container"><p>JSON Schema will be displayed here.</p></div></div>
-
     <!-- Dependencies Tab -->
     <div id="dependencies" class="tab-content">
         <div class="generic-table-container">
@@ -736,11 +781,6 @@ class ObjectViewerPanel {
                 document.getElementById('ddlBody').textContent = msg.ddl;
                 updateStatus('SQL DDL loaded');
             }
-            else if (['renderGrants', 'renderStats', 'renderTriggers', 'renderFlashback', 'renderDetails', 'renderPartitions', 'renderJson'].includes(msg.type)) {
-                const tabId = msg.type.replace('render', '').toLowerCase();
-                loadedTabs.add(tabId === 'sql' ? 'ddl' : tabId);
-                updateStatus(tabId.charAt(0).toUpperCase() + tabId.slice(1) + ' loaded');
-            }
             else if (msg.type === 'renderData') {
                 loadedTabs.add('data');
                 dataColumns = msg.columns;
@@ -760,6 +800,36 @@ class ObjectViewerPanel {
                 document.getElementById('referencedByBody').innerHTML = refHtml || '<tr><td colspan="4">No incoming dependencies.</td></tr>';
                 
                 updateStatus('Dependencies loaded');
+            }
+            else if (msg.type === 'renderGrants') {
+                loadedTabs.add('grants');
+                const html = msg.grants.map(i => '<tr><td>'+i.GRANTEE+'</td><td>'+i.PRIVILEGE+'</td><td>'+i.GRANTABLE+'</td><td>'+i.GRANTOR+'</td></tr>').join('');
+                document.getElementById('grantsBody').innerHTML = html || '<tr><td colspan="4">No grants found.</td></tr>';
+                updateStatus('Grants loaded');
+            }
+            else if (msg.type === 'renderStats') {
+                loadedTabs.add('stats');
+                const html = msg.stats.map(i => '<tr><td class="obj-name">'+i.NAME+'</td><td>'+(i.VALUE ?? '')+'</td></tr>').join('');
+                document.getElementById('statsBody').innerHTML = html || '<tr><td colspan="2">No statistics found.</td></tr>';
+                updateStatus('Statistics loaded');
+            }
+            else if (msg.type === 'renderTriggers') {
+                loadedTabs.add('triggers');
+                const html = msg.triggers.map(i => '<tr><td class="obj-name">'+i.TRIGGER_NAME+'</td><td>'+i.TRIGGER_TYPE+'</td><td>'+i.TRIGGERING_EVENT+'</td><td>'+i.STATUS+'</td><td>'+(i.DESCRIPTION || '')+'</td></tr>').join('');
+                document.getElementById('triggersBody').innerHTML = html || '<tr><td colspan="5">No triggers found.</td></tr>';
+                updateStatus('Triggers loaded');
+            }
+            else if (msg.type === 'renderDetails') {
+                loadedTabs.add('details');
+                const html = msg.details.map(i => '<tr><td class="obj-name">'+i.NAME+'</td><td>'+(i.VALUE ?? '')+'</td></tr>').join('');
+                document.getElementById('detailsBody').innerHTML = html || '<tr><td colspan="2">No details found.</td></tr>';
+                updateStatus('Details loaded');
+            }
+            else if (msg.type === 'renderPartitions') {
+                loadedTabs.add('partitions');
+                const html = msg.partitions.map(i => '<tr><td class="obj-name">'+i.PARTITION_NAME+'</td><td>'+(i.HIGH_VALUE || '')+'</td><td>'+i.TABLESPACE_NAME+'</td><td>'+i.LOGGING+'</td><td>'+(i.NUM_ROWS || '')+'</td><td>'+(i.LAST_ANALYZED || '')+'</td></tr>').join('');
+                document.getElementById('partitionsBody').innerHTML = html || '<tr><td colspan="6">No partitions found.</td></tr>';
+                updateStatus('Partitions loaded');
             }
             else if (msg.type === 'appendData') {
                 const MAX_BROWSER_ROWS = 10000;

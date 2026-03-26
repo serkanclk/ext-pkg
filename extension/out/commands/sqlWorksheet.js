@@ -35,6 +35,9 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SqlWorksheetCommands = void 0;
 const vscode = __importStar(require("vscode"));
+const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
+const os = __importStar(require("os"));
 const oracleService_1 = require("../services/oracleService");
 const connectionManager_1 = require("../services/connectionManager");
 const queryResultsPanel_1 = require("../panels/queryResultsPanel");
@@ -43,16 +46,16 @@ class SqlWorksheetCommands {
     context;
     oracleService;
     connMgr;
-    extensionUri;
     historyProvider;
     statusBar;
     /** SQL*Plus-style DEFINE substitution variables (persist across statements) */
     defineVars = new Map();
+    /** Auto-incrementing worksheet counter */
+    static worksheetCounter = 1;
     constructor(context, historyProvider, statusBar) {
         this.context = context;
         this.oracleService = oracleService_1.OracleService.getInstance();
         this.connMgr = connectionManager_1.ConnectionManager.getInstance();
-        this.extensionUri = context.extensionUri;
         this.historyProvider = historyProvider;
         this.statusBar = statusBar;
     }
@@ -63,10 +66,15 @@ class SqlWorksheetCommands {
             activeConn = item.connectionName;
         }
         const connLabel = activeConn ? ` [${activeConn}]` : '';
-        const doc = await vscode.workspace.openTextDocument({
-            language: 'oraclesql',
-            content: `-- Oracle SQL Worksheet${connLabel}\n-- Press Cmd+Enter to execute statement, F5 to execute script\n\n`
-        });
+        const tmpDir = path.join(os.tmpdir(), 'ing-sql-worksheets');
+        if (!fs.existsSync(tmpDir)) {
+            fs.mkdirSync(tmpDir, { recursive: true });
+        }
+        const fileName = `Worksheet_${SqlWorksheetCommands.worksheetCounter++}.sql`;
+        const filePath = path.join(tmpDir, fileName);
+        fs.writeFileSync(filePath, '', 'utf8');
+        const uri = vscode.Uri.file(filePath);
+        const doc = await vscode.workspace.openTextDocument(uri);
         await vscode.window.showTextDocument(doc, { preview: false });
     }
     async executeStatement() {
@@ -79,16 +87,43 @@ class SqlWorksheetCommands {
             vscode.window.showWarningMessage('No active connection. Please connect first.');
             return;
         }
-        const sql = this.getStatementAtCursor(editor);
+        let sql = this.getStatementAtCursor(editor);
         if (!sql.trim()) {
             vscode.window.showWarningMessage('No SQL statement at cursor.');
             return;
         }
         const docUri = editor.document.uri.toString();
         const docName = editor.document.fileName.split(/[\\/]/).pop() || 'Worksheet';
-        const panel = queryResultsPanel_1.QueryResultsPanel.getOrCreate(docUri, `Results — ${docName}`, this.extensionUri);
-        panel.clearResults();
-        await this.executeSql(sql.trim(), panel);
+        const panel = queryResultsPanel_1.QueryResultsPanel.getInstance();
+        if (panel) {
+            panel.clearResults(docUri, docName);
+            panel.focus();
+        }
+        // If the text contains multiple statements (has ;), split and execute each
+        const statements = this.splitStatements(sql);
+        if (statements.length > 1) {
+            let successCount = 0;
+            let errorCount = 0;
+            for (const stmt of statements) {
+                if (!stmt.trim())
+                    continue;
+                try {
+                    await this.executeSql(stmt.trim(), docUri);
+                    successCount++;
+                }
+                catch (err) {
+                    errorCount++;
+                    vscode.window.showErrorMessage(`Error: ${err.message}`);
+                }
+            }
+            if (statements.length > 1) {
+                vscode.window.showInformationMessage(`${successCount} statement(s) succeeded, ${errorCount} failed.`);
+            }
+        }
+        else {
+            // Single statement — execute directly
+            await this.executeSql(sql.trim(), docUri);
+        }
     }
     async executeScript() {
         const editor = vscode.window.activeTextEditor;
@@ -104,8 +139,11 @@ class SqlWorksheetCommands {
         const statements = this.splitStatements(fullText);
         const docUri = editor.document.uri.toString();
         const docName = editor.document.fileName.split(/[\\/]/).pop() || 'Worksheet';
-        const panel = queryResultsPanel_1.QueryResultsPanel.getOrCreate(docUri, `Results — ${docName}`, this.extensionUri);
-        panel.clearResults();
+        const panel = queryResultsPanel_1.QueryResultsPanel.getInstance();
+        if (panel) {
+            panel.clearResults(docUri, docName);
+            panel.focus();
+        }
         let successCount = 0;
         let errorCount = 0;
         for (const stmt of statements) {
@@ -113,7 +151,7 @@ class SqlWorksheetCommands {
                 continue;
             }
             try {
-                await this.executeSql(stmt.trim(), panel);
+                await this.executeSql(stmt.trim(), docUri);
                 successCount++;
             }
             catch (err) {
@@ -132,12 +170,14 @@ class SqlWorksheetCommands {
             vscode.window.showWarningMessage('No active connection.');
             return;
         }
-        const sql = this.getStatementAtCursor(editor);
+        let sql = this.getStatementAtCursor(editor);
         if (!sql.trim()) {
             return;
         }
+        // Strip trailing ; and / so EXPLAIN PLAN FOR doesn't get ORA-00933
+        sql = sql.replace(/[;\s/]+$/, '').trim();
         try {
-            const plan = await this.oracleService.getExplainPlan(sql.trim());
+            const plan = await this.oracleService.getExplainPlan(sql);
             // Explain plan opens as its own standalone WebviewPanel
             const panel = vscode.window.createWebviewPanel('ingSqlExplain', 'Explain Plan', { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, { enableScripts: true });
             panel.webview.html = this.getExplainPlanHtml(plan);
@@ -343,10 +383,19 @@ class SqlWorksheetCommands {
         const dummyItem = new OracleTreeItem(objectName, 'table', (await import('vscode')).TreeItemCollapsibleState.None, connectionName, undefined, objectName);
         vscode.commands.executeCommand('ingSql.describeObject', dummyItem);
     }
-    async executeSql(sql, panel) {
+    async executeSql(sql, docUri) {
         // Strip trailing semicolons and PL/SQL '/' terminators
         // Oracle's programmatic API doesn't accept these (SQL*Plus convention only)
-        sql = sql.replace(/[;\s/]+$/, '').trim();
+        // BUT: PL/SQL blocks (BEGIN/DECLARE) REQUIRE the trailing semicolon after END
+        const cleanForDetect = sql.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+        const isPlSqlBlock = /^\s*(BEGIN|DECLARE)\b/i.test(cleanForDetect);
+        if (isPlSqlBlock) {
+            // For PL/SQL blocks: only strip trailing / delimiter, keep semicolons
+            sql = sql.replace(/\s*\/\s*$/, '').trim();
+        }
+        else {
+            sql = sql.replace(/[;\s/]+$/, '').trim();
+        }
         // ── Handle DEFINE / UNDEFINE (SQL*Plus substitution variables) ──
         const defineMatch = sql.match(/^DEFINE\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*['"]?(.+?)['"]?\s*$/i);
         if (defineMatch) {
@@ -389,16 +438,18 @@ class SqlWorksheetCommands {
                 binds[name] = value;
             }
         }
-        const isQuery = /^\s*(SELECT|WITH)\s/i.test(sql);
+        // Strip block and line comments to accurately detect queries starting with SELECT/WITH
+        const cleanSql = sql.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+        const isQuery = /^\s*(SELECT|WITH)\s/i.test(cleanSql);
         this.statusBar.showRunning();
         // Get dedicated session connection for this worksheet
         const editor = vscode.window.activeTextEditor;
-        const docUri = editor?.document.uri.toString();
+        const sessionDocUri = editor?.document.uri.toString();
         const sessionMgr = worksheetSessionManager_js_1.WorksheetSessionManager.getInstance();
         let sessionConn;
         try {
-            if (docUri) {
-                sessionConn = await sessionMgr.getSessionConnection(docUri);
+            if (sessionDocUri) {
+                sessionConn = await sessionMgr.getSessionConnection(sessionDocUri);
             }
         }
         catch (err) {
@@ -411,9 +462,14 @@ class SqlWorksheetCommands {
                 const result = await this.oracleService.executeCursor(sql, binds, {
                     connection: sessionConn
                 });
-                // Show results in the per-worksheet results panel
-                if (panel) {
-                    panel.addResult(result);
+                // Show results in the bottom panel
+                if (docUri) {
+                    const editor = vscode.window.activeTextEditor;
+                    const docName = editor?.document.fileName.split(/[\\/]/).pop() || 'Worksheet';
+                    const resultsPanel = queryResultsPanel_1.QueryResultsPanel.getInstance();
+                    if (resultsPanel) {
+                        resultsPanel.addResult(docUri, docName, result);
+                    }
                 }
                 this.historyProvider.addEntry(sql, result.executionTime, result.rowCount);
                 this.statusBar.showSuccess(result.rowCount, result.executionTime);
@@ -470,7 +526,10 @@ class SqlWorksheetCommands {
         const offset = editor.document.offsetAt(editor.selection.active);
         // Find statement boundaries using ; and /
         const statements = this.splitStatements(text);
+        if (statements.length === 0)
+            return text;
         let currentOffset = 0;
+        let lastStmt = statements[statements.length - 1];
         for (const stmt of statements) {
             const stmtStart = text.indexOf(stmt, currentOffset);
             const stmtEnd = stmtStart + stmt.length;
@@ -479,8 +538,8 @@ class SqlWorksheetCommands {
             }
             currentOffset = stmtEnd;
         }
-        // Fallback: return entire text
-        return text;
+        // Fallback: return the last statement (not entire text — that causes ORA-00933)
+        return lastStmt;
     }
     splitStatements(text) {
         const statements = [];

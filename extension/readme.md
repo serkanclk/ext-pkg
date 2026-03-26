@@ -45,16 +45,62 @@ A professional Oracle SQL Developer clone for Visual Studio Code, optimized for 
 ## 🛡️ Audit Log Details
 The auditing system is hardcoded for maximum security. It records hostname, user, connection, format, and content metadata for every export. Logs are transmitted to `http://dwh-logger-api.athena.svc.cluster.local`.
 
-## 📦 Distribution Filenames (V2.5.0)
+## 📦 Distribution Filenames (V2.5.11)
 
 | Version | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
-| **Full** | `ing-sql-linux-x64-2.5.0.vsix` | `ing-sql-darwin-arm64-2.5.0.vsix` |
-| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.5.0.vsix` | `ing-sql-intl-darwin-arm64-2.5.0.vsix` |
-| **Restricted** | `ing-sql-restricted-linux-x64-2.5.0.vsix` | `ing-sql-restricted-darwin-arm64-2.5.0.vsix` |
-| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.5.0.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.5.0.vsix` |
+| **Full** | `ing-sql-linux-x64-2.5.11.vsix` | `ing-sql-darwin-arm64-2.5.11.vsix` |
+| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.5.11.vsix` | `ing-sql-intl-darwin-arm64-2.5.11.vsix` |
+| **Restricted** | `ing-sql-restricted-linux-x64-2.5.11.vsix` | `ing-sql-restricted-darwin-arm64-2.5.11.vsix` |
+| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.5.11.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.5.11.vsix` |
 
 ## 📋 Changelog
+
+### v2.5.11 — SQL Worksheet UX Overhaul
+- **Physical .sql Files:** New worksheets now create real `Worksheet_1.sql`, `Worksheet_2.sql` files instead of untitled documents. SQL History entries open as `History_*.sql` files.
+- **No More Comments:** Removed default instructive comment lines from new worksheets.
+- **CodeLens Actions:** Execute Statement, Execute Script, and Explain Plan now appear as clickable CodeLens buttons at the top of every `.sql` file.
+- **Copy Error Message:** Failed SQL History entries now have a right-click "Copy Error Message" context menu option.
+- **BEGIN Block Fix:** PL/SQL blocks starting with `BEGIN` or `DECLARE` no longer fail — the trailing `END;` semicolon is now correctly preserved during execution.
+
+### v2.5.9 — Crash-Proof Dictionary Engine
+- **Uncrashable Metadata Extractors:** A total paradigm shift in how the Extension extracts metadata! Instead of Oracle Dictionary `ORA-00904` crashes due to strict column names (`TABLE_SCHEMA` vs `OWNER` variation between environments) or missing constraints, the Extension now issues bullet-proof `SELECT *` commands. All cross-schema payload decoding, mapping, and filtering is now dynamically evaluated in real-time inside the NodeJS engine itself. This ensures Stats, Details, Triggers, Grants, and Partitions never ever render "empty" just because Oracle slightly changed its internal system dictionaries.
+
+### v2.5.8 — Atomic DBA Dictionary Resolution
+- **Removed Static DBA Cache:** Eradicated a subtle caching mechanism that would mistakenly block successful `DBA_TAB_PRIVS` and `DBA_TAB_STATISTICS` queries if you clicked on a view you didn't have access to (like `DBA_INDEXES`) earlier in your session! Your Other Users' details, grants, and statistics tabs should now instantly reappear since every database query will route purely atomically.
+
+### v2.5.7 — Invincible Fallbacks & Dependent Grants
+- **Webview Error Restoration:** Fixed a critical internal bug from v2.5.6 where Webview panel errors were being silently swallowed instead of resolving, causing the empty/stuck loading tabs for Grants, Details and Stats.
+- **Oracle Fallback Resilience:** Supercharged `queryWithDbaFallback`! Instead of strictly intercepting `ORA-00942`, the backend will now gracefully catch *any* ORA exception from `DBA_` views and instantly switch to standard `ALL_` dictionary equivalents, entirely eliminating silent crashes on heavily locked-down environments!
+- **Table GRANT Scripts:** The **SQL** tab now automatically fetches and appends the Table's `OBJECT_GRANT` Dependent script into the final output.
+
+### v2.5.6 — Grants & Stats Fixes
+- **Grants & Stats Repair**: Fixed an `ORA-00904` error caused by Oracle's internal dictionary mapping for Grants. Rerouted the Statistics fetch to use `ALL_TAB_STATISTICS` seamlessly for users without strict object grants. Cleaned up non-universal schema fields from the Details tab.
+- **UI Decoupler**: Hidden internal unlinked Flashback and JSON Schema tabs.
+
+### v2.5.5 — Other Users Object Viewer Overhaul
+- **Other Users Dictionary Data:** Viewing tables under "Other Users" without explicit data grants will now correctly populate metadata using DBA dictionary fallbacks (`DBA_DEPENDENCIES`, `DBA_TABLES`, etc.).
+- **New Metadata Tabs:** Implemented missing tab modules in the Object Viewer! You can now browse **Statistics**, **Grants**, **Triggers**, **Details**, and **Partitions**.
+- **Fixes**: Fixed Indexes missing for other users' tables by enforcing `TABLE_OWNER` filtering over the previous `OWNER` logic.
+
+### v2.5.4 — Load More Bug Fix
+- **Load More Fix**: Fixed a visual bug where clicking "Load More" on one query result tab would cause the button to visually stay permanently locked in a "Loading..." state when switching to other worksheet tabs.
+
+### v2.5.3 — History, Comments, & Excel Limits
+- **History Comments**: When opening a statement from history, default generated comments are now omitted while preserving your own comments.
+- **Comment Execution**: Fixed an issue where SQL statements preceded by a line comment were treated as Non-Queries and no results were shown.
+- **Excel >1M Rows**: Exports exceeding Excel's 1,048,576 row limits will now seamlessly spill over into multiple worksheets (`Data_2`, `Data_3`, etc.) within the same file.
+
+### v2.5.2 — Two-Tier Bottom Panel Tabs
+- **Multiple Worksheets in Bottom Panel**: Query Results now features a top-level tab bar inside the view that displays all open worksheets with executed queries.
+- **Persistent State**: Switching between worksheets instantly restores your results, pinned tabs, and layout.
+- **Closing**: Click the ✕ button on a worksheet name in the panel to wipe its results from memory.
+
+### v2.5.1 — Per-Worksheet Result Panes + Pin/Close
+- **Separate result panes**: Each SQL worksheet gets its own titled tab: "Results — filename.sql"
+- **Pin (📌)**: Pin important query result tabs — pinned tabs survive re-execution
+- **Close (✕)**: Close individual query result sub-tabs
+- **Auto-close**: When a worksheet is closed, its results pane auto-closes too
 
 ### v2.5.0 — Multi-Query Results + Import Encoding
 - **Multi-query execution**: Write multiple SELECTs separated by `;`, execute with F5, each gets its own result tab (Query 1, Query 2, etc.)

@@ -44,6 +44,7 @@ const auditLogService_1 = require("./services/auditLogService");
 const objectBrowserProvider_1 = require("./providers/objectBrowserProvider");
 const sqlLanguageProvider_1 = require("./providers/sqlLanguageProvider");
 const sqlHistoryProvider_1 = require("./providers/sqlHistoryProvider");
+const sqlCodeLensProvider_1 = require("./providers/sqlCodeLensProvider");
 const dbmsOutputProvider_1 = require("./providers/dbmsOutputProvider");
 const sqlSnippetsProvider_1 = require("./providers/sqlSnippetsProvider");
 const sqlWorksheet_1 = require("./commands/sqlWorksheet");
@@ -72,6 +73,7 @@ function activate(context) {
         const sqlHistoryProvider = new sqlHistoryProvider_1.SqlHistoryProvider(context);
         const dbmsOutputProvider = new dbmsOutputProvider_1.DbmsOutputProvider();
         const sqlSnippetsProvider = new sqlSnippetsProvider_1.SqlSnippetsProvider(context);
+        const queryResultsPanel = new queryResultsPanel_1.QueryResultsPanel(context.extensionUri);
         const snippetEditorPanel = new snippetEditorPanel_1.SnippetEditorPanel(context.extensionUri);
         const sqlStatusBar = new sqlStatusBar_1.SqlStatusBar();
         context.subscriptions.push({ dispose: () => sqlStatusBar.dispose() });
@@ -122,7 +124,7 @@ function activate(context) {
         });
         // ─── Register Language Features ───
         const langSelector = { language: 'oraclesql', scheme: '*' };
-        context.subscriptions.push(vscode.languages.registerCompletionItemProvider(langSelector, sqlLanguageProvider), vscode.languages.registerHoverProvider(langSelector, sqlLanguageProvider), vscode.languages.registerDocumentFormattingEditProvider(langSelector, sqlLanguageProvider));
+        context.subscriptions.push(vscode.languages.registerCompletionItemProvider(langSelector, sqlLanguageProvider), vscode.languages.registerHoverProvider(langSelector, sqlLanguageProvider), vscode.languages.registerDocumentFormattingEditProvider(langSelector, sqlLanguageProvider), vscode.window.registerWebviewViewProvider(queryResultsPanel_1.QueryResultsPanel.viewType, queryResultsPanel));
         // ─── Setup Export Handler (QueryResultsPanel — static) ───
         queryResultsPanel_1.QueryResultsPanel.setExportHandler(async (data) => {
             const activeConn = connMgr.getActiveConnectionName();
@@ -588,17 +590,25 @@ function activate(context) {
         // SQL History commands
         context.subscriptions.push(vscode.commands.registerCommand('ingSql.clearSqlHistory', () => {
             sqlHistoryProvider.clear();
+        }), vscode.commands.registerCommand('ingSql.copyErrorMessage', (item) => {
+            if (item && item.errorMessage) {
+                vscode.env.clipboard.writeText(item.errorMessage);
+                vscode.window.showInformationMessage('Error message copied to clipboard.');
+            }
         }), vscode.commands.registerCommand('ingSql.insertSqlFromHistory', async (sql) => {
-            const connLabel = connectionManager_1.ConnectionManager.getInstance().getActiveConnectionName();
-            const header = connLabel
-                ? `-- SQL from History [${connLabel}]\n`
-                : `-- SQL from History\n`;
-            const doc = await vscode.workspace.openTextDocument({
-                language: 'oraclesql',
-                content: header + `-- ${new Date().toLocaleString()}\n\n` + sql + '\n'
-            });
+            const tmpDir = require('path').join(require('os').tmpdir(), 'ing-sql-worksheets');
+            if (!require('fs').existsSync(tmpDir)) {
+                require('fs').mkdirSync(tmpDir, { recursive: true });
+            }
+            const fileName = `History_${Date.now()}.sql`;
+            const filePath = require('path').join(tmpDir, fileName);
+            require('fs').writeFileSync(filePath, sql + '\n', 'utf8');
+            const uri = vscode.Uri.file(filePath);
+            const doc = await vscode.workspace.openTextDocument(uri);
             await vscode.window.showTextDocument(doc, { preview: false });
         }));
+        // ─── CodeLens Provider ───
+        context.subscriptions.push(vscode.languages.registerCodeLensProvider({ language: 'oraclesql' }, new sqlCodeLensProvider_1.SqlCodeLensProvider()));
         // ─── Status Bar ───
         const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
         statusBarItem.command = 'ingSql.verifyThickMode';

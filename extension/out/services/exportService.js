@@ -457,6 +457,8 @@ class XlsxStreamWriter {
     workbook;
     sheet;
     rowIndex = 1;
+    sheetIndex = 1;
+    MAX_ROWS = 1048575;
     constructor(stream, columns, sheetName, sql) {
         this.stream = stream;
         this.columns = columns;
@@ -468,7 +470,12 @@ class XlsxStreamWriter {
         this.workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: this.stream });
         this.workbook.creator = 'ING SQL for VS Code';
         this.workbook.created = new Date();
-        this.sheet = this.workbook.addWorksheet(this.sheetName || 'Data');
+        this.createNewSheet();
+    }
+    createNewSheet() {
+        const name = this.sheetName || 'Data';
+        const finalName = this.sheetIndex === 1 ? name : `${name}_${this.sheetIndex}`;
+        this.sheet = this.workbook.addWorksheet(finalName);
         this.sheet.columns = this.columns.map(col => ({
             header: col.name,
             key: col.name,
@@ -482,6 +489,12 @@ class XlsxStreamWriter {
     }
     async writeBatch(rows) {
         for (const row of rows) {
+            if (this.rowIndex > this.MAX_ROWS) {
+                // Reach Excel limit, start new sheet
+                this.sheet.commit(); // Flush current sheet
+                this.sheetIndex++;
+                this.createNewSheet();
+            }
             const rowData = {};
             this.columns.forEach((col, idx) => {
                 rowData[col.name] = row[idx];

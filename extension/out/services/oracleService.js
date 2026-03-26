@@ -478,31 +478,18 @@ class OracleService {
         }
     }
     /**
-     * Track whether the current session can access DBA_ views.
-     * null = not yet tested, true/false = cached result.
-     */
-    static dbaAccessCache = null;
-    /**
-     * Try a query with DBA_ view first; if fails, retry with ALL_ view.
-     * Caches the DBA access check so we only test once per session.
+     * Try a query with DBA_ view first; if it fails for literally any reason
+     * (missing view, insufficient permissions, broken columns), retry with ALL_ view.
+     * We purposefully do NOT cache this globally, because users often have selective SELECT grants
+     * on specific DBA_ views (e.g. DBA_OBJECTS) but lack access to others (e.g. DBA_INDEXES).
      */
     async queryWithDbaFallback(conn, dbaSql, allSql, binds, options) {
-        if (OracleService.dbaAccessCache === false) {
-            // Already know DBA_ fails — go straight to ALL_
-            return conn.execute(allSql, binds, options);
-        }
         try {
-            const result = await conn.execute(dbaSql, binds, options);
-            OracleService.dbaAccessCache = true;
-            return result;
+            return await conn.execute(dbaSql, binds, options);
         }
         catch (err) {
-            // ORA-00942: table or view does not exist (no access to DBA_ view)
-            if (err.errorNum === 942 || (err.message && err.message.includes('ORA-00942'))) {
-                OracleService.dbaAccessCache = false;
-                return conn.execute(allSql, binds, options);
-            }
-            throw err;
+            console.warn(`[ING SQL] DBA fallback triggered. SQL failed: ${err.message}`);
+            return await conn.execute(allSql, binds, options);
         }
     }
     /**
@@ -624,7 +611,7 @@ class OracleService {
     async getIndexes(tableName, connectionName, owner) {
         const conn = await this.getConnection(connectionName);
         try {
-            const ownerClause = owner ? `i.OWNER = :owner` : `i.OWNER = USER`;
+            const ownerClause = owner ? `i.TABLE_OWNER = :owner` : `i.TABLE_OWNER = USER`;
             const binds = { tableName };
             if (owner) {
                 binds.owner = owner;
@@ -657,21 +644,24 @@ class OracleService {
     async getGrants(tableName, connectionName, owner) {
         const conn = await this.getConnection(connectionName);
         try {
-            const ownerClause = owner ? `TABLE_SCHEMA = :owner` : `TABLE_SCHEMA = USER`;
-            const sql = `
-                SELECT GRANTEE, PRIVILEGE, GRANTABLE, GRANTOR
-                FROM ALL_TAB_PRIVS
-                WHERE TABLE_NAME = :tableName AND ${ownerClause}
-                ORDER BY GRANTEE, PRIVILEGE
-            `;
             const binds = { tableName };
+            const makeSql = (prefix) => `
+                SELECT * FROM ${prefix}_TAB_PRIVS
+                WHERE TABLE_NAME = :tableName
+            `;
+            const result = owner
+                ? await this.queryWithDbaFallback(conn, makeSql('DBA'), makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT })
+                : await conn.execute(makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT });
+            let rows = (result.rows || []);
             if (owner) {
-                binds.owner = owner;
+                rows = rows.filter(r => r.OWNER === owner || r.TABLE_SCHEMA === owner);
             }
-            const result = await conn.execute(sql, binds, {
-                outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
-            });
-            return (result.rows || []);
+            return rows.map(r => ({
+                GRANTEE: r.GRANTEE,
+                PRIVILEGE: r.PRIVILEGE,
+                GRANTABLE: r.GRANTABLE,
+                GRANTOR: r.GRANTOR
+            }));
         }
         finally {
             await conn.close();
@@ -680,21 +670,25 @@ class OracleService {
     async getTriggers(tableName, connectionName, owner) {
         const conn = await this.getConnection(connectionName);
         try {
-            const ownerClause = owner ? `OWNER = :owner` : `OWNER = USER`;
-            const sql = `
-                SELECT TRIGGER_NAME, TRIGGER_TYPE, TRIGGERING_EVENT, STATUS, DESCRIPTION
-                FROM ALL_TRIGGERS
-                WHERE ${ownerClause} AND TABLE_NAME = :tableName
-                ORDER BY TRIGGER_NAME
-            `;
             const binds = { tableName };
+            const makeSql = (prefix) => `
+                SELECT * FROM ${prefix}_TRIGGERS
+                WHERE TABLE_NAME = :tableName
+            `;
+            const result = owner
+                ? await this.queryWithDbaFallback(conn, makeSql('DBA'), makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT })
+                : await conn.execute(makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT });
+            let rows = (result.rows || []);
             if (owner) {
-                binds.owner = owner;
+                rows = rows.filter(r => r.OWNER === owner || r.TABLE_OWNER === owner);
             }
-            const result = await conn.execute(sql, binds, {
-                outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
-            });
-            return (result.rows || []);
+            return rows.map(r => ({
+                TRIGGER_NAME: r.TRIGGER_NAME,
+                TRIGGER_TYPE: r.TRIGGER_TYPE,
+                TRIGGERING_EVENT: r.TRIGGERING_EVENT,
+                STATUS: r.STATUS,
+                DESCRIPTION: r.DESCRIPTION || ''
+            }));
         }
         finally {
             await conn.close();
@@ -736,7 +730,21 @@ class OracleService {
                 fetchInfo: { DDL: { type: oracledb_1.default.STRING } }
             });
             const rows = (result.rows || []);
-            return rows.length > 0 ? rows[0].DDL : '';
+            let ddl = rows.length > 0 ? rows[0].DDL : '';
+            // Attempt to append Grants DDL for relevant object types
+            if (ddl && owner && ['TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'PACKAGE'].includes(objectType)) {
+                try {
+                    const grantResult = await conn.execute(`SELECT DBMS_METADATA.GET_DEPENDENT_DDL('OBJECT_GRANT', :name, :owner) AS GRANT_DDL FROM DUAL`, { name: objectName, owner: owner }, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT, fetchInfo: { GRANT_DDL: { type: oracledb_1.default.STRING } } });
+                    const grantRows = (grantResult.rows || []);
+                    if (grantRows.length > 0 && grantRows[0].GRANT_DDL) {
+                        ddl += '\n\n/* Grants */\n' + grantRows[0].GRANT_DDL;
+                    }
+                }
+                catch (e) {
+                    // Ignore if no grants exist or unsupported
+                }
+            }
+            return ddl;
         }
         finally {
             await conn.close();
@@ -824,40 +832,119 @@ class OracleService {
     async getDependencies(objectName, connectionName, schemaName) {
         const conn = await this.getConnection(connectionName);
         try {
-            // Use provided schema or default to current user
-            const ownerFilter = schemaName || 'USER';
             const ownerBind = schemaName ? { name: objectName, owner: schemaName } : { name: objectName };
             const ownerWhere = schemaName ? 'OWNER = :owner' : 'OWNER = USER';
-            // Objects this object depends on
-            const depsSql = `
+            const makeDepsSql = (prefix) => `
                 SELECT REFERENCED_OWNER AS OWNER, 
                        REFERENCED_NAME AS NAME, 
                        REFERENCED_TYPE AS TYPE, 
                        DEPENDENCY_TYPE
-                FROM ALL_DEPENDENCIES
+                FROM ${prefix}_DEPENDENCIES
                 WHERE ${ownerWhere} AND NAME = :name
                 ORDER BY TYPE, NAME
             `;
-            const depsResult = await conn.execute(depsSql, ownerBind, {
-                outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
-            });
-            // Objects that reference this object
-            const refSql = `
+            const depsResult = schemaName
+                ? await this.queryWithDbaFallback(conn, makeDepsSql('DBA'), makeDepsSql('ALL'), ownerBind, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT })
+                : await conn.execute(makeDepsSql('ALL'), ownerBind, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT });
+            const refWhere = schemaName ? 'REFERENCED_OWNER = :owner' : 'REFERENCED_OWNER = USER';
+            const makeRefSql = (prefix) => `
                 SELECT OWNER, 
                        NAME, 
                        TYPE, 
                        DEPENDENCY_TYPE
-                FROM ALL_DEPENDENCIES
-                WHERE ${schemaName ? 'REFERENCED_OWNER = :owner' : 'REFERENCED_OWNER = USER'} AND REFERENCED_NAME = :name
+                FROM ${prefix}_DEPENDENCIES
+                WHERE ${refWhere} AND REFERENCED_NAME = :name
                 ORDER BY TYPE, NAME
             `;
-            const refResult = await conn.execute(refSql, ownerBind, {
-                outFormat: oracledb_1.default.OUT_FORMAT_OBJECT
-            });
+            const refResult = schemaName
+                ? await this.queryWithDbaFallback(conn, makeRefSql('DBA'), makeRefSql('ALL'), ownerBind, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT })
+                : await conn.execute(makeRefSql('ALL'), ownerBind, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT });
             return {
                 dependencies: (depsResult.rows || []),
                 referencedBy: (refResult.rows || [])
             };
+        }
+        finally {
+            await conn.close();
+        }
+    }
+    async getStatistics(tableName, connectionName, owner) {
+        const conn = await this.getConnection(connectionName);
+        try {
+            const binds = { tableName };
+            const makeSql = (prefix) => `
+                SELECT * FROM ${prefix}_TAB_STATISTICS
+                WHERE TABLE_NAME = :tableName
+            `;
+            const result = owner
+                ? await this.queryWithDbaFallback(conn, makeSql('DBA'), makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT })
+                : await conn.execute(makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT });
+            let rows = (result.rows || []);
+            if (owner) {
+                rows = rows.filter(r => r.OWNER === owner || r.TABLE_OWNER === owner || r.SCHEMA_NAME === owner);
+            }
+            if (rows.length === 0)
+                return [];
+            const r = rows[0];
+            const excluded = ['TABLE_NAME', 'OWNER', 'TABLE_OWNER'];
+            return Object.keys(r)
+                .filter(k => !excluded.includes(k) && r[k] !== null)
+                .map(k => ({ NAME: k, VALUE: String(r[k]) }));
+        }
+        finally {
+            await conn.close();
+        }
+    }
+    async getDetails(objectName, connectionName, owner) {
+        const conn = await this.getConnection(connectionName);
+        try {
+            const binds = { objectName };
+            const makeSql = (prefix) => `
+                SELECT * FROM ${prefix}_OBJECTS
+                WHERE OBJECT_NAME = :objectName
+            `;
+            const result = owner
+                ? await this.queryWithDbaFallback(conn, makeSql('DBA'), makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT })
+                : await conn.execute(makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT });
+            let rows = (result.rows || []);
+            if (owner) {
+                rows = rows.filter(r => r.OWNER === owner);
+            }
+            if (rows.length === 0)
+                return [];
+            const r = rows[0];
+            const excluded = ['OBJECT_NAME', 'OWNER'];
+            return Object.keys(r)
+                .filter(k => !excluded.includes(k) && r[k] !== null)
+                .map(k => ({ NAME: k, VALUE: String(r[k]) }));
+        }
+        finally {
+            await conn.close();
+        }
+    }
+    async getPartitions(tableName, connectionName, owner) {
+        const conn = await this.getConnection(connectionName);
+        try {
+            const binds = { tableName };
+            const makeSql = (prefix) => `
+                SELECT * FROM ${prefix}_TAB_PARTITIONS
+                WHERE TABLE_NAME = :tableName
+            `;
+            const result = owner
+                ? await this.queryWithDbaFallback(conn, makeSql('DBA'), makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT })
+                : await conn.execute(makeSql('ALL'), binds, { outFormat: oracledb_1.default.OUT_FORMAT_OBJECT });
+            let rows = (result.rows || []);
+            if (owner) {
+                rows = rows.filter(r => r.TABLE_OWNER === owner || r.OWNER === owner);
+            }
+            return rows.map(r => ({
+                PARTITION_NAME: r.PARTITION_NAME,
+                HIGH_VALUE: r.HIGH_VALUE,
+                TABLESPACE_NAME: r.TABLESPACE_NAME,
+                LOGGING: r.LOGGING,
+                NUM_ROWS: r.NUM_ROWS,
+                LAST_ANALYZED: r.LAST_ANALYZED
+            }));
         }
         finally {
             await conn.close();

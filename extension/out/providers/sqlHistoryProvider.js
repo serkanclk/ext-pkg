@@ -80,6 +80,9 @@ class SqlHistoryProvider {
             item.iconPath = entry.error
                 ? new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'))
                 : new vscode.ThemeIcon('check', new vscode.ThemeColor('testing.iconPassed'));
+            // Context menu support
+            item.contextValue = entry.error ? 'sqlHistoryError' : 'sqlHistorySuccess';
+            item.errorMessage = entry.error;
             // Click to insert SQL into active editor
             item.command = {
                 command: 'ingSql.insertSqlFromHistory',
@@ -94,6 +97,7 @@ exports.SqlHistoryProvider = SqlHistoryProvider;
 class SqlHistoryItem extends vscode.TreeItem {
     label;
     collapsibleState;
+    errorMessage;
     constructor(label, collapsibleState) {
         super(label, collapsibleState);
         this.label = label;
