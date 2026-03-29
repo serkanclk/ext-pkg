@@ -2,7 +2,7 @@
   "name": "ing-sql-intl",
   "displayName": "ING SQL + Intellisense",
   "description": "ING Oracle SQL Developer (Full + Intellisense)",
-  "version": "2.5.12",
+  "version": "2.6.0",
   "publisher": "ing-sql",
   "engines": {
     "vscode": "^1.85.0"
@@ -332,7 +332,7 @@
         },
         {
           "command": "ingSql.newSqlWorksheet",
-          "when": "view == ingSql.objectBrowser && viewItem =~ /^(connection-connected|category|table|view|mview|index|sequence|synonym|dblink|trigger|procedure|function|package|type|column|constraint|grant|table-trigger|table-index)$/",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^(connection-connected|category|table|view|mview|index|sequence|synonym|dblink|trigger|procedure|function|package|package-spec|package-body|type|column|constraint|grant|table-trigger|table-index)$/",
           "group": "worksheet@1"
         },
         {
@@ -377,17 +377,17 @@
         },
         {
           "command": "ingSql.viewSource",
-          "when": "view == ingSql.objectBrowser && viewItem =~ /^(procedure|function|package|trigger|type)$/",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^(procedure|function|package|package-spec|package-body|trigger|type)$/",
           "group": "code@1"
         },
         {
           "command": "ingSql.compileObject",
-          "when": "view == ingSql.objectBrowser && viewItem =~ /^(procedure|function|package|trigger|type)$/",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^(procedure|function|package|package-spec|package-body|trigger|type)$/",
           "group": "code@2"
         },
         {
           "command": "ingSql.dropObject",
-          "when": "view == ingSql.objectBrowser && viewItem =~ /^(table|view|mview|index|sequence|procedure|function|package|trigger|type|synonym|dblink)$/",
+          "when": "view == ingSql.objectBrowser && viewItem =~ /^(table|view|mview|index|sequence|procedure|function|package|package-spec|package-body|trigger|type|synonym|dblink)$/",
           "group": "danger@1"
         },
         {
@@ -528,6 +528,30 @@
             "editor"
           ],
           "description": "Where to display query results"
+        },
+        "ingSql.resultGrid.nullDisplay": {
+          "type": "string",
+          "default": "(null)",
+          "description": "Text to display for NULL values in query results and exports. Matches Oracle SQL Developer behavior.",
+          "enum": [
+            "(null)",
+            "(NULL)",
+            "NULL",
+            "",
+            " "
+          ],
+          "enumDescriptions": [
+            "(null) — Oracle SQL Developer default",
+            "(NULL) — Uppercase variant",
+            "NULL — Plain text",
+            "Empty string — Show nothing",
+            "Single space — Blank cell"
+          ]
+        },
+        "ingSql.resultGrid.useEditorFont": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use VS Code's editor font (monospace) in the query results grid for better column alignment."
         }
       }
     },

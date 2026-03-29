@@ -35,13 +35,61 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SqlSnippetItem = exports.SqlSnippetsProvider = void 0;
 const vscode = __importStar(require("vscode"));
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
 class SqlSnippetsProvider {
     context;
     _onDidChangeTreeData = new vscode.EventEmitter();
     onDidChangeTreeData = this._onDidChangeTreeData.event;
-    static SNIPPETS_KEY = 'ingSql.userSnippets';
+    static LEGACY_KEY = 'ingSql.userSnippets';
+    snippetsFilePath;
     constructor(context) {
         this.context = context;
+        const storagePath = context.globalStorageUri.fsPath;
+        if (!fs.existsSync(storagePath)) {
+            fs.mkdirSync(storagePath, { recursive: true });
+        }
+        this.snippetsFilePath = path.join(storagePath, 'snippets.json');
+        this.migrateFromGlobalState();
+    }
+    /**
+     * One-time migration: if snippets exist in globalState (legacy storage),
+     * merge them into the file and clear globalState so users aren't affected.
+     */
+    migrateFromGlobalState() {
+        const legacy = this.context.globalState.get(SqlSnippetsProvider.LEGACY_KEY);
+        if (legacy && legacy.length > 0) {
+            const existing = this.readSnippetsFromFile();
+            const existingIds = new Set(existing.map(s => s.id));
+            const toMerge = legacy.filter(s => !existingIds.has(s.id));
+            if (toMerge.length > 0) {
+                const merged = [...existing, ...toMerge];
+                this.writeSnippetsToFile(merged);
+            }
+            // Clear legacy storage
+            this.context.globalState.update(SqlSnippetsProvider.LEGACY_KEY, undefined);
+        }
+    }
+    readSnippetsFromFile() {
+        try {
+            if (fs.existsSync(this.snippetsFilePath)) {
+                const raw = fs.readFileSync(this.snippetsFilePath, 'utf8');
+                return JSON.parse(raw);
+            }
+        }
+        catch (err) {
+            console.error('Failed to read snippets file:', err);
+        }
+        return [];
+    }
+    writeSnippetsToFile(snippets) {
+        try {
+            fs.writeFileSync(this.snippetsFilePath, JSON.stringify(snippets, null, 2), 'utf8');
+        }
+        catch (err) {
+            console.error('Failed to write snippets file:', err);
+            vscode.window.showErrorMessage('Failed to save snippets.');
+        }
     }
     refresh() {
         this._onDidChangeTreeData.fire();
@@ -60,28 +108,28 @@ class SqlSnippetsProvider {
         }
     }
     getSnippets() {
-        return this.context.globalState.get(SqlSnippetsProvider.SNIPPETS_KEY, []);
+        return this.readSnippetsFromFile();
     }
     async addSnippet(name, content) {
         const snippets = this.getSnippets();
         const id = Date.now().toString();
         snippets.push({ id, name, content });
-        await this.context.globalState.update(SqlSnippetsProvider.SNIPPETS_KEY, snippets);
+        this.writeSnippetsToFile(snippets);
         this.refresh();
     }
     async updateSnippet(id, name, content) {
-        let snippets = this.getSnippets();
+        const snippets = this.getSnippets();
         const index = snippets.findIndex(s => s.id === id);
         if (index !== -1) {
             snippets[index] = { id, name, content };
-            await this.context.globalState.update(SqlSnippetsProvider.SNIPPETS_KEY, snippets);
+            this.writeSnippetsToFile(snippets);
             this.refresh();
         }
     }
     async deleteSnippet(id) {
         let snippets = this.getSnippets();
         snippets = snippets.filter(s => s.id !== id);
-        await this.context.globalState.update(SqlSnippetsProvider.SNIPPETS_KEY, snippets);
+        this.writeSnippetsToFile(snippets);
         this.refresh();
     }
 }

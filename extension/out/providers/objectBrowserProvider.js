@@ -135,6 +135,8 @@ class ObjectBrowserProvider {
             case 'view':
             case 'mview':
                 return this.getTableSubCategories(element);
+            case 'package':
+                return this.getPackageChildren(element);
             default:
                 return this.getSubCategoryChildren(element);
         }
@@ -196,7 +198,7 @@ class ObjectBrowserProvider {
             const category = treeItems_1.OBJECT_CATEGORIES.find(c => c.type === objectType);
             const itemType = category?.itemType || 'table';
             return objects.map(obj => {
-                const hasChildren = ['table', 'view', 'mview'].includes(itemType);
+                const hasChildren = ['table', 'view', 'mview', 'package'].includes(itemType);
                 return new treeItems_1.OracleTreeItem(obj.name, itemType, hasChildren
                     ? vscode.TreeItemCollapsibleState.Collapsed
                     : vscode.TreeItemCollapsibleState.None, connectionName, schemaName, obj.name, undefined, obj.status !== 'VALID' ? obj.status : undefined);
@@ -215,7 +217,7 @@ class ObjectBrowserProvider {
             const category = treeItems_1.OBJECT_CATEGORIES.find(c => c.type === objectType);
             const itemType = category?.itemType || 'table';
             return objects.map(obj => {
-                const hasChildren = ['table', 'view', 'mview'].includes(itemType);
+                const hasChildren = ['table', 'view', 'mview', 'package'].includes(itemType);
                 return new treeItems_1.OracleTreeItem(obj.name, itemType, hasChildren
                     ? vscode.TreeItemCollapsibleState.Collapsed
                     : vscode.TreeItemCollapsibleState.None, connectionName, obj.owner, obj.name, undefined, obj.status !== 'VALID' ? obj.status : undefined);
@@ -230,6 +232,12 @@ class ObjectBrowserProvider {
         return treeItems_1.TABLE_SUB_CATEGORIES.map(subCat => new treeItems_1.OracleTreeItem(subCat, 'category', vscode.TreeItemCollapsibleState.Collapsed, tableElement.connectionName, tableElement.schemaName, subCat, // sub-category name
         tableElement.objectName // parent table name
         ));
+    }
+    getPackageChildren(packageElement) {
+        return [
+            new treeItems_1.OracleTreeItem('Spec', 'package-spec', vscode.TreeItemCollapsibleState.None, packageElement.connectionName, packageElement.schemaName, packageElement.objectName),
+            new treeItems_1.OracleTreeItem('Body', 'package-body', vscode.TreeItemCollapsibleState.None, packageElement.connectionName, packageElement.schemaName, packageElement.objectName),
+        ];
     }
     async getSubCategoryChildren(element) {
         const tableName = element.parentObjectName;

@@ -45,16 +45,25 @@ A professional Oracle SQL Developer clone for Visual Studio Code, optimized for 
 ## 🛡️ Audit Log Details
 The auditing system is hardcoded for maximum security. It records hostname, user, connection, format, and content metadata for every export. Logs are transmitted to `http://dwh-logger-api.athena.svc.cluster.local`.
 
-## 📦 Distribution Filenames (V2.5.11)
+## 📦 Distribution Filenames (V2.6.0)
 
 | Version | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
-| **Full** | `ing-sql-linux-x64-2.5.11.vsix` | `ing-sql-darwin-arm64-2.5.11.vsix` |
-| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.5.11.vsix` | `ing-sql-intl-darwin-arm64-2.5.11.vsix` |
-| **Restricted** | `ing-sql-restricted-linux-x64-2.5.11.vsix` | `ing-sql-restricted-darwin-arm64-2.5.11.vsix` |
-| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.5.11.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.5.11.vsix` |
+| **Full** | `ing-sql-linux-x64-2.6.0.vsix` | `ing-sql-darwin-arm64-2.6.0.vsix` |
+| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.6.0.vsix` | `ing-sql-intl-darwin-arm64-2.6.0.vsix` |
+| **Restricted** | `ing-sql-restricted-linux-x64-2.6.0.vsix` | `ing-sql-restricted-darwin-arm64-2.6.0.vsix` |
+| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.6.0.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.6.0.vsix` |
 
 ## 📋 Changelog
+
+### v2.6.0 — Smart IntelliSense & Diagnostics
+- **Smart Context-Aware IntelliSense**: Dot-completion for aliases (`a.`), tables (`TABLE.`), and schemas (`SCHEMA.`). Context-aware column suggestions inside `SELECT` and `WHERE` clauses. Lazily caches columns for top performance.
+- **Real-Time SQL Diagnostics**: Red squiggly lines instantly appear for unclosed strings (`'`), unmatched parentheses, and unterminated block comments (`/*`) while you type.
+- **Execution Error Pinpointing**: Oracle execution errors (e.g. `ORA-00942`) now map directly to the exact offending word in your script via a red squiggly line and a Problems panel entry.
+- **Result Grid Null Display**: Customize how `NULL` values display in the query grid and CSV/HTML exports via `ingSql.resultGrid.nullDisplay` (defaults to `(null)`).
+- **Result Grid Editor Font**: The query results grid now natively inherits VS Code's `editor.fontFamily` (e.g. monospace) via `ingSql.resultGrid.useEditorFont` for flawless column alignment.
+- **Package Body Webview**: Expanded Packages in the Object Browser now map into distinct `Spec` and `Body` nodes, fixing missing body visibility.
+- **Snippet Storage Migration**: Snippets safely migrated from browser-bound `globalState` caching to physical `snippets.json` files for cross-browser persistency.
 
 ### v2.5.11 — SQL Worksheet UX Overhaul
 - **Physical .sql Files:** New worksheets now create real `Worksheet_1.sql`, `Worksheet_2.sql` files instead of untitled documents. SQL History entries open as `History_*.sql` files.

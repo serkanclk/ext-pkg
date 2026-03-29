@@ -41,12 +41,14 @@ const oracleService_1 = require("./services/oracleService");
 const exportService_1 = require("./services/exportService");
 const importService_1 = require("./services/importService");
 const auditLogService_1 = require("./services/auditLogService");
+const columnCacheService_1 = require("./services/columnCacheService");
 const objectBrowserProvider_1 = require("./providers/objectBrowserProvider");
 const sqlLanguageProvider_1 = require("./providers/sqlLanguageProvider");
 const sqlHistoryProvider_1 = require("./providers/sqlHistoryProvider");
 const sqlCodeLensProvider_1 = require("./providers/sqlCodeLensProvider");
 const dbmsOutputProvider_1 = require("./providers/dbmsOutputProvider");
 const sqlSnippetsProvider_1 = require("./providers/sqlSnippetsProvider");
+const sqlDiagnosticsProvider_1 = require("./providers/sqlDiagnosticsProvider");
 const sqlWorksheet_1 = require("./commands/sqlWorksheet");
 const queryResultsPanel_1 = require("./panels/queryResultsPanel");
 const objectViewerPanel_1 = require("./panels/objectViewerPanel");
@@ -69,16 +71,19 @@ function activate(context) {
         const auditLogService = auditLogService_1.AuditLogService.getInstance();
         // ─── Initialize UI Components ───
         const objectBrowserProvider = new objectBrowserProvider_1.ObjectBrowserProvider(context);
-        const sqlLanguageProvider = new sqlLanguageProvider_1.SqlLanguageProvider();
+        const sqlLanguageProvider = new sqlLanguageProvider_1.SqlLanguageProvider(new columnCacheService_1.ColumnCacheService());
         const sqlHistoryProvider = new sqlHistoryProvider_1.SqlHistoryProvider(context);
         const dbmsOutputProvider = new dbmsOutputProvider_1.DbmsOutputProvider();
         const sqlSnippetsProvider = new sqlSnippetsProvider_1.SqlSnippetsProvider(context);
+        const sqlDiagnosticsProvider = new sqlDiagnosticsProvider_1.SqlDiagnosticsProvider();
         const queryResultsPanel = new queryResultsPanel_1.QueryResultsPanel(context.extensionUri);
         const snippetEditorPanel = new snippetEditorPanel_1.SnippetEditorPanel(context.extensionUri);
         const sqlStatusBar = new sqlStatusBar_1.SqlStatusBar();
         context.subscriptions.push({ dispose: () => sqlStatusBar.dispose() });
+        context.subscriptions.push({ dispose: () => sqlDiagnosticsProvider.dispose() });
+        context.subscriptions.push(...sqlDiagnosticsProvider.startWatching());
         sqlStatusBar.showReady();
-        const sqlWorksheetCommands = new sqlWorksheet_1.SqlWorksheetCommands(context, sqlHistoryProvider, sqlStatusBar);
+        const sqlWorksheetCommands = new sqlWorksheet_1.SqlWorksheetCommands(context, sqlHistoryProvider, sqlStatusBar, sqlDiagnosticsProvider);
         // ─── Object Viewer Management ───
         const objectViewers = new Map();
         function getObjectViewer(objectName, connectionName) {
@@ -124,7 +129,7 @@ function activate(context) {
         });
         // ─── Register Language Features ───
         const langSelector = { language: 'oraclesql', scheme: '*' };
-        context.subscriptions.push(vscode.languages.registerCompletionItemProvider(langSelector, sqlLanguageProvider), vscode.languages.registerHoverProvider(langSelector, sqlLanguageProvider), vscode.languages.registerDocumentFormattingEditProvider(langSelector, sqlLanguageProvider), vscode.window.registerWebviewViewProvider(queryResultsPanel_1.QueryResultsPanel.viewType, queryResultsPanel));
+        context.subscriptions.push(vscode.languages.registerCompletionItemProvider(langSelector, sqlLanguageProvider, '.'), vscode.languages.registerHoverProvider(langSelector, sqlLanguageProvider), vscode.languages.registerDocumentFormattingEditProvider(langSelector, sqlLanguageProvider), vscode.window.registerWebviewViewProvider(queryResultsPanel_1.QueryResultsPanel.viewType, queryResultsPanel));
         // ─── Setup Export Handler (QueryResultsPanel — static) ───
         queryResultsPanel_1.QueryResultsPanel.setExportHandler(async (data) => {
             const activeConn = connMgr.getActiveConnectionName();
@@ -448,7 +453,8 @@ function activate(context) {
             }
             const typeMap = {
                 'procedure': 'PROCEDURE', 'function': 'FUNCTION',
-                'package': 'PACKAGE', 'trigger': 'TRIGGER', 'type': 'TYPE',
+                'package': 'PACKAGE', 'package-spec': 'PACKAGE', 'package-body': 'PACKAGE BODY',
+                'trigger': 'TRIGGER', 'type': 'TYPE',
             };
             const objType = typeMap[item.objectType] || 'PROCEDURE';
             try {
@@ -470,7 +476,8 @@ function activate(context) {
             }
             const typeMap = {
                 'procedure': 'PROCEDURE', 'function': 'FUNCTION',
-                'package': 'PACKAGE', 'trigger': 'TRIGGER', 'type': 'TYPE',
+                'package': 'PACKAGE', 'package-spec': 'PACKAGE', 'package-body': 'PACKAGE BODY',
+                'trigger': 'TRIGGER', 'type': 'TYPE',
             };
             const objType = typeMap[item.objectType] || 'PROCEDURE';
             try {
@@ -488,7 +495,9 @@ function activate(context) {
             const typeMap = {
                 'table': 'TABLE', 'view': 'VIEW', 'mview': 'MATERIALIZED VIEW',
                 'index': 'INDEX', 'sequence': 'SEQUENCE', 'procedure': 'PROCEDURE',
-                'function': 'FUNCTION', 'package': 'PACKAGE', 'trigger': 'TRIGGER',
+                'function': 'FUNCTION', 'package': 'PACKAGE',
+                'package-spec': 'PACKAGE', 'package-body': 'PACKAGE BODY',
+                'trigger': 'TRIGGER',
                 'type': 'TYPE', 'synonym': 'SYNONYM', 'dblink': 'DATABASE LINK',
             };
             const objType = typeMap[item.objectType] || 'TABLE';

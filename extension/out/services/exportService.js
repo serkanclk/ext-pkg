@@ -183,14 +183,16 @@ class ExportService {
         });
     }
     createStreamWriter(format, stream, columns, tableName, sql) {
+        const config = vscode.workspace.getConfiguration('ingSql');
+        const nullDisplay = config.get('resultGrid.nullDisplay', '(null)');
         switch (format) {
-            case 'csv': return new CsvStreamWriter(stream, columns);
+            case 'csv': return new CsvStreamWriter(stream, columns, nullDisplay);
             case 'json': return new JsonStreamWriter(stream, columns);
             case 'xml': return new XmlStreamWriter(stream, columns, tableName);
             case 'sql': return new SqlStreamWriter(stream, columns, tableName || 'TABLE_NAME');
-            case 'html': return new HtmlStreamWriter(stream, columns, tableName);
+            case 'html': return new HtmlStreamWriter(stream, columns, tableName, nullDisplay);
             case 'xlsx': return new XlsxStreamWriter(stream, columns, tableName, sql);
-            default: return new CsvStreamWriter(stream, columns);
+            default: return new CsvStreamWriter(stream, columns, nullDisplay);
         }
     }
     // ─────────────────────────────────────────────
@@ -218,9 +220,9 @@ class ExportService {
     }
 }
 exports.ExportService = ExportService;
-function formatValue(val) {
+function formatValue(val, nullDisplay = '') {
     if (val === null || val === undefined) {
-        return '';
+        return nullDisplay;
     }
     if (val instanceof Date) {
         return val.toISOString();
@@ -254,9 +256,11 @@ function htmlEscape(value) {
 class CsvStreamWriter {
     stream;
     columns;
-    constructor(stream, columns) {
+    nullDisplay;
+    constructor(stream, columns, nullDisplay) {
         this.stream = stream;
         this.columns = columns;
+        this.nullDisplay = nullDisplay;
     }
     writeHeader() {
         this.stream.write('\ufeff');
@@ -269,7 +273,7 @@ class CsvStreamWriter {
             const end = Math.min(i + CHUNK, rows.length);
             let chunk = '';
             for (let j = i; j < end; j++) {
-                chunk += rows[j].map(val => csvEscape(formatValue(val))).join(',') + '\n';
+                chunk += rows[j].map(val => csvEscape(formatValue(val, this.nullDisplay))).join(',') + '\n';
             }
             await streamWrite(this.stream, chunk);
         }
@@ -386,10 +390,12 @@ class HtmlStreamWriter {
     stream;
     columns;
     title;
-    constructor(stream, columns, title) {
+    nullDisplay;
+    constructor(stream, columns, title, nullDisplay = '(null)') {
         this.stream = stream;
         this.columns = columns;
         this.title = title;
+        this.nullDisplay = nullDisplay;
     }
     writeHeader() {
         const title = this.title || 'Data Export';
@@ -429,7 +435,7 @@ class HtmlStreamWriter {
                 chunk += '<tr>';
                 for (const val of rows[j]) {
                     if (val === null || val === undefined) {
-                        chunk += '<td class="null">(null)</td>';
+                        chunk += '<td class="null">' + htmlEscape(this.nullDisplay) + '</td>';
                     }
                     else {
                         chunk += `<td>${htmlEscape(String(val))}</td>`;

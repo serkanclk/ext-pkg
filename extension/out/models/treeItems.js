@@ -88,6 +88,8 @@ class OracleTreeItem extends vscode.TreeItem {
             'procedure': 'symbol-method',
             'function': 'symbol-function',
             'package': 'package',
+            'package-spec': 'symbol-interface',
+            'package-body': 'symbol-method',
             'type': 'symbol-struct',
             'column': 'symbol-field',
             'constraint': 'lock',

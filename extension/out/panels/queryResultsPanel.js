@@ -91,8 +91,16 @@ class QueryResultsPanel {
         };
         webviewView.webview.onDidReceiveMessage((msg) => this.handleMessage(msg));
         webviewView.webview.html = this.getHtmlContent();
+        // Live-update settings when user changes them
+        const configListener = vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('ingSql.resultGrid') || e.affectsConfiguration('editor.fontFamily') || e.affectsConfiguration('editor.fontSize')) {
+                webviewView.webview.html = this.getHtmlContent();
+                setTimeout(() => this.pushCurrentResults(), 300);
+            }
+        });
         webviewView.onDidDispose(() => {
             this.view = undefined;
+            configListener.dispose();
         });
         // Delay to let webview script initialize
         setTimeout(() => this.pushCurrentResults(), 300);
@@ -294,6 +302,10 @@ class QueryResultsPanel {
     getHtmlContent() {
         const config = vscode.workspace.getConfiguration('ingSql');
         const nullDisplay = config.get('resultGrid.nullDisplay', '(null)');
+        const useEditorFont = config.get('resultGrid.useEditorFont', true);
+        const gridFontCss = useEditorFont
+            ? `font-family: var(--vscode-editor-font-family, 'Courier New', monospace); font-size: var(--vscode-editor-font-size, 13px);`
+            : '';
         return /*html*/ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -415,7 +427,7 @@ class QueryResultsPanel {
 
         /* ── Grid ── */
         .grid-container { flex: 1; overflow: auto; position: relative; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; ${gridFontCss} }
         th {
             background: var(--vscode-editorWidget-background);
             border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.2));

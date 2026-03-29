@@ -36,6 +36,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SqlLanguageProvider = void 0;
 const vscode = __importStar(require("vscode"));
 const oracleService_1 = require("../services/oracleService");
+const connectionManager_1 = require("../services/connectionManager");
+const columnCacheService_1 = require("../services/columnCacheService");
+const sqlContextParser_1 = require("../utils/sqlContextParser");
 const buildConfig_1 = require("../buildConfig");
 let heavyData = null;
 if (buildConfig_1.BUILD_CONFIG.hasIntellisense) {
@@ -98,29 +101,128 @@ const ORACLE_TYPES = [
 ];
 class SqlLanguageProvider {
     cachedObjects = new Map();
-    provideCompletionItems(document, position, token, context) {
+    columnCacheService;
+    constructor(columnCacheService) {
+        this.columnCacheService = columnCacheService || new columnCacheService_1.ColumnCacheService();
+    }
+    // ─── Smart Completion Provider ──────────────────────────────────
+    async provideCompletionItems(document, position, token, context) {
+        const text = document.getText();
+        const cursorOffset = document.offsetAt(position);
+        const sqlContext = sqlContextParser_1.SqlContextParser.parse(text, cursorOffset);
+        switch (sqlContext.contextType) {
+            case 'dot_column':
+                return this.getColumnCompletions(sqlContext.dotPrefix, sqlContext.tables);
+            case 'dot_schema':
+                return this.getSchemaObjectCompletions(sqlContext.dotPrefix);
+            case 'select_columns':
+                return [
+                    ...(await this.getAllColumnsInScope(sqlContext.tables)),
+                    ...this.getFunctionCompletions(),
+                    ...this.getKeywordCompletions(),
+                ];
+            case 'where_condition':
+                return [
+                    ...(await this.getAllColumnsInScope(sqlContext.tables)),
+                    ...this.getFunctionCompletions(),
+                    ...this.getKeywordCompletions(),
+                ];
+            case 'from_table':
+                return [
+                    ...this.getTableCompletions(),
+                    ...this.getKeywordCompletions(),
+                ];
+            case 'general':
+            default:
+                return this.getGeneralCompletions();
+        }
+    }
+    // ─── Completion Builders ────────────────────────────────────────
+    /**
+     * Column completions for a specific table/alias after a dot.
+     */
+    async getColumnCompletions(prefix, tables) {
+        // Resolve the prefix to a table name
+        const tableRef = tables.find(t => t.alias === prefix) || tables.find(t => t.name === prefix);
+        if (!tableRef) {
+            return [];
+        }
+        const connectionName = connectionManager_1.ConnectionManager.getInstance().getActiveConnectionName() || undefined;
+        const columns = await this.columnCacheService.getColumns(tableRef.name, connectionName, tableRef.schema);
+        return columns.map((col, idx) => {
+            const item = new vscode.CompletionItem(col.name, vscode.CompletionItemKind.Field);
+            item.detail = this.formatColumnType(col);
+            item.documentation = col.comments || undefined;
+            item.sortText = String(idx).padStart(4, '0'); // preserve column order
+            return item;
+        });
+    }
+    /**
+     * Table completions for a schema after a dot (e.g., `HR.`).
+     */
+    async getSchemaObjectCompletions(schema) {
+        const connectionName = connectionManager_1.ConnectionManager.getInstance().getActiveConnectionName() || undefined;
+        const objects = await this.columnCacheService.getSchemaObjects(schema, connectionName);
+        return objects.map(obj => {
+            const kind = obj.type === 'VIEW'
+                ? vscode.CompletionItemKind.Interface
+                : vscode.CompletionItemKind.Class;
+            const item = new vscode.CompletionItem(obj.name, kind);
+            item.detail = `${schema}.${obj.name} (${obj.type})`;
+            return item;
+        });
+    }
+    /**
+     * Column completions for all tables currently in scope.
+     * Prefixed with table alias/name for clarity when multiple tables present.
+     */
+    async getAllColumnsInScope(tables) {
+        if (tables.length === 0) {
+            return [];
+        }
+        const connectionName = connectionManager_1.ConnectionManager.getInstance().getActiveConnectionName() || undefined;
         const items = [];
-        // Keywords
-        for (const kw of ORACLE_KEYWORDS) {
+        const multiTable = tables.length > 1;
+        for (const table of tables) {
+            const columns = await this.columnCacheService.getColumns(table.name, connectionName, table.schema);
+            const label = table.alias || table.name;
+            for (const col of columns) {
+                // When there are multiple tables, show TABLE.COLUMN
+                if (multiTable) {
+                    const item = new vscode.CompletionItem(`${label}.${col.name}`, vscode.CompletionItemKind.Field);
+                    item.insertText = `${label}.${col.name}`;
+                    item.detail = `${this.formatColumnType(col)} — ${table.name}`;
+                    item.documentation = col.comments || undefined;
+                    item.filterText = `${col.name} ${label}.${col.name}`;
+                    items.push(item);
+                }
+                // Always add the plain column name
+                const plainItem = new vscode.CompletionItem(col.name, vscode.CompletionItemKind.Field);
+                plainItem.detail = `${this.formatColumnType(col)}${multiTable ? ` — ${table.name}` : ''}`;
+                plainItem.documentation = col.comments || undefined;
+                items.push(plainItem);
+            }
+        }
+        return items;
+    }
+    getKeywordCompletions() {
+        return ORACLE_KEYWORDS.map(kw => {
             const item = new vscode.CompletionItem(kw, vscode.CompletionItemKind.Keyword);
             item.detail = 'Oracle SQL Keyword';
             item.insertText = kw;
-            items.push(item);
-        }
-        // Functions
-        for (const fn of ORACLE_FUNCTIONS) {
+            return item;
+        });
+    }
+    getFunctionCompletions() {
+        return ORACLE_FUNCTIONS.map(fn => {
             const item = new vscode.CompletionItem(fn, vscode.CompletionItemKind.Function);
             item.detail = 'Oracle Function';
             item.insertText = new vscode.SnippetString(`${fn}($1)`);
-            items.push(item);
-        }
-        // Data types
-        for (const t of ORACLE_TYPES) {
-            const item = new vscode.CompletionItem(t, vscode.CompletionItemKind.TypeParameter);
-            item.detail = 'Oracle Data Type';
-            items.push(item);
-        }
-        // Cached schema objects
+            return item;
+        });
+    }
+    getTableCompletions() {
+        const items = [];
         for (const [type, names] of this.cachedObjects) {
             for (const name of names) {
                 const kind = type === 'TABLE' ? vscode.CompletionItemKind.Class
@@ -145,6 +247,36 @@ class SqlLanguageProvider {
         }
         return items;
     }
+    /**
+     * General/fallback completions (existing behavior).
+     */
+    getGeneralCompletions() {
+        return [
+            ...this.getKeywordCompletions(),
+            ...this.getFunctionCompletions(),
+            ...ORACLE_TYPES.map(t => {
+                const item = new vscode.CompletionItem(t, vscode.CompletionItemKind.TypeParameter);
+                item.detail = 'Oracle Data Type';
+                return item;
+            }),
+            ...this.getTableCompletions(),
+        ];
+    }
+    // ─── Util ───────────────────────────────────────────────────────
+    formatColumnType(col) {
+        let type = col.dataType;
+        if (col.dataPrecision !== null) {
+            type += `(${col.dataPrecision}${col.dataScale !== null && col.dataScale !== 0 ? ',' + col.dataScale : ''})`;
+        }
+        else if (['VARCHAR2', 'CHAR', 'NVARCHAR2', 'NCHAR', 'RAW'].includes(col.dataType)) {
+            type += `(${col.dataLength})`;
+        }
+        if (col.nullable === 'N') {
+            type += ' NOT NULL';
+        }
+        return type;
+    }
+    // ─── Hover Provider ─────────────────────────────────────────────
     provideHover(document, position, token) {
         const wordRange = document.getWordRangeAtPosition(position);
         if (!wordRange) {
@@ -162,6 +294,7 @@ class SqlLanguageProvider {
         }
         return undefined;
     }
+    // ─── Formatting Provider ────────────────────────────────────────
     provideDocumentFormattingEdits(document, options, token) {
         const text = document.getText();
         const formatted = this.formatSql(text);
@@ -185,7 +318,6 @@ class SqlLanguageProvider {
         }
     }
     formatSql(sql) {
-        // Basic SQL formatting: uppercase keywords, add newlines
         const keywords = [
             'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'ORDER BY', 'GROUP BY',
             'HAVING', 'JOIN', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL JOIN',
@@ -199,9 +331,7 @@ class SqlLanguageProvider {
             const regex = new RegExp(`\\b${kw.replace(/\s+/g, '\\s+')}\\b`, 'gi');
             formatted = formatted.replace(regex, '\n' + kw.toUpperCase());
         }
-        // Clean up leading newline
         formatted = formatted.replace(/^\n/, '');
-        // Collapse multiple newlines
         formatted = formatted.replace(/\n{3,}/g, '\n\n');
         return formatted;
     }
