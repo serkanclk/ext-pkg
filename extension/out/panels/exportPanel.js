@@ -51,9 +51,6 @@ class ExportPanel {
         // Handle messages from the webview
         this.panel.webview.onDidReceiveMessage(async (message) => {
             switch (message.type) {
-                case 'browseFile':
-                    await this.handleBrowseFile(message.format);
-                    break;
                 case 'export':
                     if (this.resolvePromise) {
                         this.resolvePromise(message.data);
@@ -80,20 +77,16 @@ class ExportPanel {
             this.resolvePromise = resolve;
         });
     }
-    async handleBrowseFile(format) {
-        const extMap = {
-            csv: 'csv', xlsx: 'xlsx', json: 'json', xml: 'xml', sql: 'sql', html: 'html'
-        };
-        const uri = await vscode.window.showSaveDialog({
-            filters: {
-                [format.toUpperCase()]: [extMap[format]]
-            }
-        });
-        if (uri && this.panel) {
-            this.panel.webview.postMessage({ type: 'fileSelected', path: uri.fsPath });
-        }
-    }
     getHtmlContent() {
+        // Generate default filename with timestamp
+        const now = new Date();
+        const ts = now.getFullYear().toString() +
+            (now.getMonth() + 1).toString().padStart(2, '0') +
+            now.getDate().toString().padStart(2, '0') + '_' +
+            now.getHours().toString().padStart(2, '0') +
+            now.getMinutes().toString().padStart(2, '0') +
+            now.getSeconds().toString().padStart(2, '0');
+        const defaultFileName = `export_${ts}`;
         return /*html*/ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -192,14 +185,40 @@ class ExportPanel {
             font-weight: normal;
         }
 
-        /* File input group */
-        .file-input-group {
+        /* Filename + extension display */
+        .filename-group {
             display: flex;
-            gap: 8px;
+            align-items: center;
+            gap: 4px;
+        }
+        .filename-group input[type="text"] {
+            flex: 1;
+        }
+        .filename-ext {
+            font-size: 13px;
+            color: var(--vscode-descriptionForeground);
+            white-space: nowrap;
+            padding: 6px 0;
         }
 
-        .file-input-group input[type="text"] {
-            flex: 1;
+        /* Acknowledgment notice */
+        .notice {
+            margin-top: 8px;
+            border-top: 1px solid var(--vscode-panel-border);
+            padding-top: 14px;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+        .notice-icon {
+            font-size: 14px;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+        .notice-text {
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            line-height: 1.5;
         }
 
         /* Buttons */
@@ -233,7 +252,7 @@ class ExportPanel {
 </head>
 <body>
     <div class="header">
-        Export
+        Export & Download
     </div>
     
     <div class="content">
@@ -284,29 +303,22 @@ class ExportPanel {
         </div>
 
         <div class="form-group">
-            <label for="destination">Export Destination:</label>
-            <select id="destination">
-                <option value="file">File</option>
-                <!-- Clipboard support can be added here later -->
-            </select>
-        </div>
-
-        <div class="form-group">
-            <label for="filePath">File:</label>
-            <div class="file-input-group">
-                <input type="text" id="filePath" placeholder="No file selected">
-                <button type="button" class="secondary" id="browseBtn" style="border: 1px solid var(--vscode-button-border, var(--vscode-focusBorder));">Browse...</button>
+            <label for="fileName">File Name:</label>
+            <div class="filename-group">
+                <input type="text" id="fileName" value="${defaultFileName}" placeholder="Enter file name">
+                <span class="filename-ext" id="fileExt">.csv</span>
             </div>
         </div>
-        <div class="checkbox-group" style="margin-top: 8px; border-top: 1px solid var(--vscode-panel-border); padding-top: 14px;">
-            <input type="checkbox" id="downloadToDevice" checked>
-            <label for="downloadToDevice" style="font-size: 12px; color: var(--vscode-descriptionForeground);">Download to my device — I acknowledge that this data will be saved to my local machine and I accept responsibility for its secure handling per company data governance policies.</label>
+
+        <div class="notice">
+            <span class="notice-icon">ℹ️</span>
+            <span class="notice-text">This data will be exported and downloaded to your local machine. By proceeding, you acknowledge responsibility for its secure handling per company data governance policies.</span>
         </div>
     </div>
     
     <div class="footer">
         <button class="secondary" id="cancelBtn">Cancel</button>
-        <button id="exportBtn">Export</button>
+        <button id="exportBtn">Export & Download</button>
     </div>
 
     <script>
@@ -314,48 +326,47 @@ class ExportPanel {
         
         const formatSelect = document.getElementById('format');
         const csvOptions = document.getElementById('csv-options');
-        const browseBtn = document.getElementById('browseBtn');
-        const filePathInput = document.getElementById('filePath');
+        const fileNameInput = document.getElementById('fileName');
+        const fileExtSpan = document.getElementById('fileExt');
         const cancelBtn = document.getElementById('cancelBtn');
         const exportBtn = document.getElementById('exportBtn');
 
-        formatSelect.addEventListener('change', () => {
+        const extMap = { csv: '.csv', xlsx: '.xlsx', json: '.json', xml: '.xml', sql: '.sql', html: '.html' };
+
+        function updateExtension() {
+            fileExtSpan.textContent = extMap[formatSelect.value] || '.dat';
             if (formatSelect.value === 'csv') {
                 csvOptions.style.display = 'block';
             } else {
                 csvOptions.style.display = 'none';
             }
-        });
+        }
 
-        browseBtn.addEventListener('click', () => {
-            vscode.postMessage({
-                type: 'browseFile',
-                format: formatSelect.value
-            });
-        });
+        formatSelect.addEventListener('change', updateExtension);
+        updateExtension();
 
         cancelBtn.addEventListener('click', () => {
             vscode.postMessage({ type: 'cancel' });
         });
 
-        const downloadCheckbox = document.getElementById('downloadToDevice');
-
         exportBtn.addEventListener('click', () => {
-            // Build the options object
+            const name = fileNameInput.value.trim();
+            if (!name) {
+                fileNameInput.style.borderColor = 'var(--vscode-inputValidation-errorBorder, red)';
+                fileNameInput.focus();
+                return;
+            }
+
+            const ext = extMap[formatSelect.value] || '.dat';
+            const fullFileName = name + ext;
+
             const data = {
                 format: formatSelect.value,
-                filePath: filePathInput.value || undefined,
-                downloadToDevice: downloadCheckbox.checked
+                fileName: fullFileName,
+                downloadToDevice: true
             };
             
             vscode.postMessage({ type: 'export', data });
-        });
-
-        window.addEventListener('message', event => {
-            const message = event.data;
-            if (message.type === 'fileSelected') {
-                filePathInput.value = message.path;
-            }
         });
     </script>
 </body>
