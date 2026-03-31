@@ -73,6 +73,7 @@ class ExportService {
     async promptAndExport(options) {
         let format = options.format;
         let filePath = options.filePath;
+        let downloadToDevice = options.downloadToDevice ?? true;
         // Either format or filePath missing -> open panel
         if (!format || !filePath) {
             if (!this.context) {
@@ -86,6 +87,7 @@ class ExportService {
             }
             format = userOptions.format;
             filePath = userOptions.filePath;
+            downloadToDevice = userOptions.downloadToDevice ?? true;
         }
         const start = Date.now();
         try {
@@ -111,11 +113,11 @@ class ExportService {
                 format,
                 durationMs: Date.now() - start,
             };
-            vscode.window.showInformationMessage(`Exported ${result.rowCount.toLocaleString()} rows to ${path.basename(filePath)} (${this.formatFileSize(result.fileSize)}) in ${(result.durationMs / 1000).toFixed(1)}s`, 'Open File').then(choice => {
-                if (choice === 'Open File') {
-                    vscode.env.openExternal(vscode.Uri.file(filePath));
-                }
-            });
+            // Auto-download to client if user opted in
+            if (downloadToDevice) {
+                vscode.env.openExternal(vscode.Uri.file(filePath));
+            }
+            vscode.window.showInformationMessage(`Exported ${result.rowCount.toLocaleString()} rows to ${path.basename(filePath)} (${this.formatFileSize(result.fileSize)}) in ${(result.durationMs / 1000).toFixed(1)}s${downloadToDevice ? ' — downloading to your machine...' : ''}`);
             return result;
         }
         catch (err) {

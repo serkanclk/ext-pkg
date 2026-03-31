@@ -298,6 +298,10 @@ class ExportPanel {
                 <button type="button" class="secondary" id="browseBtn" style="border: 1px solid var(--vscode-button-border, var(--vscode-focusBorder));">Browse...</button>
             </div>
         </div>
+        <div class="checkbox-group" style="margin-top: 8px; border-top: 1px solid var(--vscode-panel-border); padding-top: 14px;">
+            <input type="checkbox" id="downloadToDevice" checked>
+            <label for="downloadToDevice" style="font-size: 12px; color: var(--vscode-descriptionForeground);">Download to my device — I acknowledge that this data will be saved to my local machine and I accept responsibility for its secure handling per company data governance policies.</label>
+        </div>
     </div>
     
     <div class="footer">
@@ -334,11 +338,14 @@ class ExportPanel {
             vscode.postMessage({ type: 'cancel' });
         });
 
+        const downloadCheckbox = document.getElementById('downloadToDevice');
+
         exportBtn.addEventListener('click', () => {
             // Build the options object
             const data = {
                 format: formatSelect.value,
-                filePath: filePathInput.value || undefined
+                filePath: filePathInput.value || undefined,
+                downloadToDevice: downloadCheckbox.checked
             };
             
             vscode.postMessage({ type: 'export', data });

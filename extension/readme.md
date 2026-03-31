@@ -1,285 +1,92 @@
-# ING SQL for VS Code
+# VS Code için ING SQL
 
-A professional Oracle SQL Developer clone for Visual Studio Code, optimized for **security, audit compliance, and thick-mode performance**.
+Visual Studio Code için **güvenlik, denetim uyumluluğu ve thick-mode performansı** için optimize edilmiş profesyonel bir Oracle SQL Developer alternatifi.
 
-## 🚀 Key Features
+## 🚀 Temel Özellikler
 
-### 🏢 Corporate-Grade Security
-- **Mandatory Audit Logging**: Every data export is automatically recorded in a **centralized database** via a background listener service. Logging is mandatory and cannot be diverted or disabled by users.
-- **Restricted Build Support**: A dedicated "Restricted" version is available that disables data exports, blocks clipboard copying (Ctrl+C / Cmd+C), and prevents right-click context menus on queried data.
+### 🏢 Kurumsal Düzeyde Güvenlik
+- **Zorunlu Denetim Günlüğü (Audit Logging)**: Her veri dışa aktarımı (export), arka planda çalışan bir dinleyici servisi aracılığıyla **merkezi bir veritabanına** otomatik olarak kaydedilir. Günlük kaydı zorunludur ve kullanıcılar tarafından yönlendirilemez veya devre dışı bırakılamaz.
+- **Kısıtlı (Restricted) Sürüm Desteği**: Veri dışa aktarımlarını devre dışı bırakan, panoya kopyalamayı (Ctrl+C / Cmd+C) engelleyen ve sorgulanan verilerde sağ tık menülerini engelleyen özel bir "Restricted" sürüm mevcuttur.
 
-### 🔌 Advanced Connectivity (Thick Mode)
-- **Oracle Thick Mode**: Automatically uses Oracle Instant Client for enhanced security (NNE - Native Network Encryption) and high-performance driver features.
-- **Secure Password Storage**: Passwords are saved in the native VS Code Secret Storage.
-- **Thick Mode Diagnostics**: Built-in "Verify Oracle Client" command to validate your local environment.
+### 🔌 Gelişmiş Bağlantı (Thick Mode)
+- **Oracle Thick Mode**: Gelişmiş güvenlik (NNE - Native Network Encryption) ve yüksek performanslı sürücü özellikleri için Oracle Instant Client'ı otomatik olarak kullanır.
+- **Güvenli Parola Depolama**: Parolalar yerel VS Code Secret Storage içinde güvenli bir şekilde saklanır.
+- **Thick Mode Tanılaması**: Yerel ortamınızı doğrulamak için yerleşik "Verify Oracle Client" komutu.
 
-### 🌲 Professional Object Browser
-- Comprehensive tree view for Tables, Views, Procedures, Functions, Packages, Sequences, and more.
-- **Metadata Tabs**: Rich, tabbed interface for viewing Columns, Data, Constraints, Grants, Statistics, Triggers, DDL, and Dependencies.
-- **Theme Adaptability**: UI automatically adapts to any VS Code theme (Light, Dark, High Contrast) while maintaining ING corporate branding.
+### 🌲 Profesyonel Nesne Tarayıcısı (Object Browser)
+- Tablolar, Görünümler (Views), Prosedürler, Fonksiyonlar, Paketler, Diziler (Sequences) ve daha fazlası için kapsamlı ağaç görünümü.
+- **Meta Veri Sekmeleri**: Sütunlar, Veriler, Kısıtlamalar, Yetkiler (Grants), İstatistikler, Tetikleyiciler (Triggers), DDL ve Bağımlılıkları (Dependencies) görüntülemek için zengin, sekmeli arayüz.
+- **Tema Uyumu**: ING kurumsal kimliğini korurken, VS Code'un tüm temalarına (Açık, Koyu, Yüksek Karşıtlık) otomatik olarak uyum sağlar.
 
-### 📝 SQL Worksheet & History
-- Robust SQL & PL/SQL syntax highlighting and autocompletion.
-- Persistent SQL History and SQL Snippets management.
-- Explain Plan (F10) and DBMS_OUTPUT support.
+### 📝 SQL Çalışma Sayfası (Worksheet) ve Geçmiş
+- Güçlü SQL ve PL/SQL sözdizimi vurgulama (syntax highlighting) ve otomatik tamamlama.
+- Kalıcı SQL Geçmişi ve SQL Snippet yönetimi.
+- Çalıştırma Planı (Explain Plan - F10) ve DBMS_OUTPUT desteği.
 
-### ⌨️ Classic SQL Developer Shortcuts
-- **New SQL Worksheet**: `Alt+F10`.
-- **SQL-Aware Uppercase**: `Ctrl+Shift+U` (Win/Linux) / `Cmd+Shift+U` (Mac). Intelligently skips literals in single quotes.
+### ⌨️ Klasik SQL Developer Kısayolları
+- **Yeni SQL Çalışma Sayfası**: `Alt+F10`.
+- **SQL Uyumlu Büyük Harf**: `Ctrl+Shift+U` (Win/Linux) / `Cmd+Shift+U` (Mac). Tek tırnak içindeki metinleri akıllıca atlar.
 
-### 🧠 Intellisense (Optional Feature)
-- **Rich Offline Autocompletion**: Includes 3,500+ schema objects for instant feedback in high-latency or offline environments (available in `+ Intellisense` builds).
+### 🧠 Intellisense (İsteğe Bağlı Özellik)
+- **Zengin Çevrimdışı Otomatik Tamamlama**: Yüksek gecikmeli veya çevrimdışı ortamlarda anında geri bildirim için 3.500'den fazla şema nesnesi içerir (`+ Intellisense` sürümlerinde mevcuttur).
 
-### 📥 Data Import
-- Import data from **CSV** and **XLSX** files directly into new or existing tables via the Object Browser context menu.
+### 📥 Veri İçe Aktarma (Import)
+- Nesne Tarayıcısı sağ tık menüsü aracılığıyla **CSV** ve **XLSX** dosyalarından doğrudan yeni veya mevcut tablolara veri aktarın.
 
-### 📊 Results Grid
-- Interactive grid with sorting, filtering, and "Load More" pagination.
-- Status bar tracking row count and transaction execution time.
+### 📊 Sonuç Izgarası (Results Grid)
+- Sıralama, filtreleme ve "Daha Fazla Yükle" (Load More) sayfalama özelliklerine sahip etkileşimli ızgara.
+- Satır sayısını ve işlem yürütme süresini takip eden Durum Çubuğu.
 
-## 🛠️ Requirements
+## 🛠️ Gereksinimler
 
-- **Oracle Database**: 12.1 or later.
-- **Oracle Client**: Oracle Instant Client 19c or 23ai is **required** for Thick Mode operation. The extension expects the client library in a secure, predefined path (or via the `ORACLE_CLIENT_PATH` environment variable).
+- **Oracle Veritabanı**: 12.1 veya daha yenisi.
+- **Oracle İstemcisi**: Thick Mode çalışması için Oracle Instant Client 19c veya 23ai **gereklidir**. Eklenti, istemci kitaplığını güvenli, önceden tanımlanmış bir yolda (veya `ORACLE_CLIENT_PATH` ortam değişkeni aracılığıyla) bekler.
 
-## 🛡️ Audit Log Details
-The auditing system is hardcoded for maximum security. It records hostname, user, connection, format, and content metadata for every export. Logs are transmitted to `http://dwh-logger-api.athena.svc.cluster.local`.
+## 🛡️ Denetim Günlüğü (Audit Log) Detayları
+Denetim sistemi, maksimum güvenlik için koda gömülmüştür. Her veri aktarımı için sunucu adı, kullanıcı, bağlantı, format ve içerik meta verilerini kaydeder. Kayıtlar `http://dwh-logger-api.athena.svc.cluster.local` adresine iletilir.
 
-## 📦 Distribution Filenames (V2.6.0)
+## 📦 Dağıtım Dosyaları (V2.6.0)
 
-| Version | Linux (x64) | Mac (ARM64) |
+| Sürüm | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
 | **Full** | `ing-sql-linux-x64-2.6.0.vsix` | `ing-sql-darwin-arm64-2.6.0.vsix` |
 | **Full + Intellisense** | `ing-sql-intl-linux-x64-2.6.0.vsix` | `ing-sql-intl-darwin-arm64-2.6.0.vsix` |
 | **Restricted** | `ing-sql-restricted-linux-x64-2.6.0.vsix` | `ing-sql-restricted-darwin-arm64-2.6.0.vsix` |
 | **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.6.0.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.6.0.vsix` |
 
-## 📋 Changelog
+## 📋 Sürüm Notları (Changelog)
 
-### v2.6.0 — Smart IntelliSense & Diagnostics
-- **Smart Context-Aware IntelliSense**: Dot-completion for aliases (`a.`), tables (`TABLE.`), and schemas (`SCHEMA.`). Context-aware column suggestions inside `SELECT` and `WHERE` clauses. Lazily caches columns for top performance.
-- **Real-Time SQL Diagnostics**: Red squiggly lines instantly appear for unclosed strings (`'`), unmatched parentheses, and unterminated block comments (`/*`) while you type.
-- **Execution Error Pinpointing**: Oracle execution errors (e.g. `ORA-00942`) now map directly to the exact offending word in your script via a red squiggly line and a Problems panel entry.
-- **Result Grid Null Display**: Customize how `NULL` values display in the query grid and CSV/HTML exports via `ingSql.resultGrid.nullDisplay` (defaults to `(null)`).
-- **Result Grid Editor Font**: The query results grid now natively inherits VS Code's `editor.fontFamily` (e.g. monospace) via `ingSql.resultGrid.useEditorFont` for flawless column alignment.
-- **Package Body Webview**: Expanded Packages in the Object Browser now map into distinct `Spec` and `Body` nodes, fixing missing body visibility.
-- **Snippet Storage Migration**: Snippets safely migrated from browser-bound `globalState` caching to physical `snippets.json` files for cross-browser persistency.
+### v2.6.0 — Akıllı IntelliSense ve Tanılamalar
+- **Akıllı Bağlama Duyarlı IntelliSense**: Alias'lar (`a.`), tablolar (`TABLO.`) ve şemalar (`SEMA.`) için nokta ile tamamlama desteği. `SELECT` ve `WHERE` yan tümceleri içinde bağlama uygun sütun önerileri. Maksimum performans için sütunları gecikmeli (lazy) olarak önbelleğe alır.
+- **Gerçek Zamanlı SQL Tanılamaları**: Yazı yazarken kapatılmamış tırnaklar (`'`), eşleşmeyen parantezler ve sonlandırılmamış çoklu yorum satırları (`/*`) için anında beliren kırmızı dalgalı alt çizgiler.
+- **Çalıştırma Hatası Vurgulama**: Oracle çalışma hataları (örn. `ORA-00942`), artık kırmızı dalgalı çizgi ve "Sorunlar" (Problems) paneli üzerinden kodunuzdaki soruna neden olan kelimeyle doğrudan eşleştiriliyor.
+- **Sonuç Izgarasında Null Gösterimi**: `ingSql.resultGrid.nullDisplay` (varsayılan: `(null)`) ayarıyla, `NULL` değerlerin sonuç ızgarasında ve CSV/HTML çıktı formatlarında nasıl görüntüleneceğini özelleştirebilirsiniz.
+- **Sonuç Izgarası Düzenleyici Yazı Tipi**: Sütunların mükemmel hizalanması için `ingSql.resultGrid.useEditorFont` ayarıyla sonuç ızgarası, VS Code'un `editor.fontFamily` (örn. monospace) yazı tipini doğrudan miras alır.
+- **Paket Gövdesi Görünümü**: Nesne Tarayıcısı'ndaki paketler (Packages) artık eksik gövde görünürlüğü sorununu çözerek belirgin `Spec` (Tanım) ve `Body` (Gövde) düğümlerine genişler.
+- **Snippet Depolama Taşıması**: Tarayıcıya bağlı `globalState` önbelleğindeki snippet'ler, tarayıcılar arası (cross-browser) kalıcılık için fiziksel `snippets.json` dosyalarına güvenli bir şekilde taşındı.
 
-### v2.5.11 — SQL Worksheet UX Overhaul
-- **Physical .sql Files:** New worksheets now create real `Worksheet_1.sql`, `Worksheet_2.sql` files instead of untitled documents. SQL History entries open as `History_*.sql` files.
-- **No More Comments:** Removed default instructive comment lines from new worksheets.
-- **CodeLens Actions:** Execute Statement, Execute Script, and Explain Plan now appear as clickable CodeLens buttons at the top of every `.sql` file.
-- **Copy Error Message:** Failed SQL History entries now have a right-click "Copy Error Message" context menu option.
-- **BEGIN Block Fix:** PL/SQL blocks starting with `BEGIN` or `DECLARE` no longer fail — the trailing `END;` semicolon is now correctly preserved during execution.
+### v2.5.11 — SQL Çalışma Sayfası UX İyileştirmeleri
+- **Fiziksel .sql Dosyaları:** Yeni çalışma sayfaları artık isimsiz belgeler yerine gerçek `Worksheet_1.sql`, `Worksheet_2.sql` dosyaları oluşturur. SQL Geçmişi kayıtları `History_*.sql` dosyaları olarak açılır.
+- **Varsayılan Yorumların Kaldırılması:** Yeni çalışma sayfalarındaki varsayılan açıklayıcı yorum satırları kaldırıldı.
+- **CodeLens Eylemleri:** İfadeyi Çalıştır, Komut Dosyasını Çalıştır ve Çalıştırma Planı (Explain Plan) artık her `.sql` dosyasının üstünde tıklanabilir CodeLens düğmeleri olarak görünüyor.
+- **Hata Mesajını Kopyala:** Başarısız olan SQL Geçmişi kayıtları için artık sağ tık bağlam menüsüne "Hata Mesajını Kopyala" (Copy Error Message) seçeneği eklendi.
+- **BEGIN Bloğu Düzeltmesi:** `BEGIN` veya `DECLARE` ile başlayan PL/SQL blokları artık başarısız olmuyor - sondaki `END;` noktalı virgülü (semicolon) artık yürütme sırasında doğru bir şekilde korunuyor.
 
-### v2.5.9 — Crash-Proof Dictionary Engine
-- **Uncrashable Metadata Extractors:** A total paradigm shift in how the Extension extracts metadata! Instead of Oracle Dictionary `ORA-00904` crashes due to strict column names (`TABLE_SCHEMA` vs `OWNER` variation between environments) or missing constraints, the Extension now issues bullet-proof `SELECT *` commands. All cross-schema payload decoding, mapping, and filtering is now dynamically evaluated in real-time inside the NodeJS engine itself. This ensures Stats, Details, Triggers, Grants, and Partitions never ever render "empty" just because Oracle slightly changed its internal system dictionaries.
+### v2.5.9 — Çökmeyen (Crash-Proof) Dictionary Motoru
+- **Sağlamlaştırılmış Veri Çıkarıcıları:** Eklentinin meta veri çıkarma yönteminde tam bir paradigma değişimi! Kesin sütun isimleri (`TABLE_SCHEMA` ve `OWNER` çekişmeleri) veya eksik kısıtlamalar nedeniyle oluşan `ORA-00904` Oracle Dictionary çökmeleri yerine, eklenti artık hatasız `SELECT *` komutları yayınlıyor. Şemalar arası tüm veri çözme, eşleme ve filtreleme, anlık olarak NodeJS motoru içinde dinamik bir şekilde gerçekleştirilir.
 
-### v2.5.8 — Atomic DBA Dictionary Resolution
-- **Removed Static DBA Cache:** Eradicated a subtle caching mechanism that would mistakenly block successful `DBA_TAB_PRIVS` and `DBA_TAB_STATISTICS` queries if you clicked on a view you didn't have access to (like `DBA_INDEXES`) earlier in your session! Your Other Users' details, grants, and statistics tabs should now instantly reappear since every database query will route purely atomically.
+### v2.5.8 — Bağımsız DBA Dictionary Çözümlemesi
+- **Statik DBA Önbelleği (Cache) Kaldırıldı:** Yetkiniz olmayan bir görünüme tıkladığınızda `DBA_TAB_PRIVS` gibi sorguları engelleyen önbellek mekanizması düzeltildi. Diğer Kullanıcıların (Other Users) sekmeleri her sorgu tamamen bağımsız çalıştığı için anında yüklenir.
 
-### v2.5.7 — Invincible Fallbacks & Dependent Grants
-- **Webview Error Restoration:** Fixed a critical internal bug from v2.5.6 where Webview panel errors were being silently swallowed instead of resolving, causing the empty/stuck loading tabs for Grants, Details and Stats.
-- **Oracle Fallback Resilience:** Supercharged `queryWithDbaFallback`! Instead of strictly intercepting `ORA-00942`, the backend will now gracefully catch *any* ORA exception from `DBA_` views and instantly switch to standard `ALL_` dictionary equivalents, entirely eliminating silent crashes on heavily locked-down environments!
-- **Table GRANT Scripts:** The **SQL** tab now automatically fetches and appends the Table's `OBJECT_GRANT` Dependent script into the final output.
+### v2.5.7 — Yenilmez Fallback'ler ve Bağımlı (Dependent) Yetkiler
+- **Webview Hata Restorasyonu:** Webview paneli hatalarının sessizce yutulmasını çözen düzeltme uygulandı.
+- **Oracle Fallback Esnekliği:** Sadece `ORA-00942` hatalarından ziyade, `DBA_` görünümlerinden gelen herhangi bir ORA istisnası artık başarıyla yakalanıyor ve anında standart `ALL_` sözlük eşdeğerlerine geçiş yapıyor.
+- **Tablo GRANT Kodları:** **SQL** sekmesi artık Tablonun bağımlı (dependent) `OBJECT_GRANT` komutunu otomatik olarak getirip ekliyor.
 
-### v2.5.6 — Grants & Stats Fixes
-- **Grants & Stats Repair**: Fixed an `ORA-00904` error caused by Oracle's internal dictionary mapping for Grants. Rerouted the Statistics fetch to use `ALL_TAB_STATISTICS` seamlessly for users without strict object grants. Cleaned up non-universal schema fields from the Details tab.
-- **UI Decoupler**: Hidden internal unlinked Flashback and JSON Schema tabs.
-
-### v2.5.5 — Other Users Object Viewer Overhaul
-- **Other Users Dictionary Data:** Viewing tables under "Other Users" without explicit data grants will now correctly populate metadata using DBA dictionary fallbacks (`DBA_DEPENDENCIES`, `DBA_TABLES`, etc.).
-- **New Metadata Tabs:** Implemented missing tab modules in the Object Viewer! You can now browse **Statistics**, **Grants**, **Triggers**, **Details**, and **Partitions**.
-- **Fixes**: Fixed Indexes missing for other users' tables by enforcing `TABLE_OWNER` filtering over the previous `OWNER` logic.
-
-### v2.5.4 — Load More Bug Fix
-- **Load More Fix**: Fixed a visual bug where clicking "Load More" on one query result tab would cause the button to visually stay permanently locked in a "Loading..." state when switching to other worksheet tabs.
-
-### v2.5.3 — History, Comments, & Excel Limits
-- **History Comments**: When opening a statement from history, default generated comments are now omitted while preserving your own comments.
-- **Comment Execution**: Fixed an issue where SQL statements preceded by a line comment were treated as Non-Queries and no results were shown.
-- **Excel >1M Rows**: Exports exceeding Excel's 1,048,576 row limits will now seamlessly spill over into multiple worksheets (`Data_2`, `Data_3`, etc.) within the same file.
-
-### v2.5.2 — Two-Tier Bottom Panel Tabs
-- **Multiple Worksheets in Bottom Panel**: Query Results now features a top-level tab bar inside the view that displays all open worksheets with executed queries.
-- **Persistent State**: Switching between worksheets instantly restores your results, pinned tabs, and layout.
-- **Closing**: Click the ✕ button on a worksheet name in the panel to wipe its results from memory.
-
-### v2.5.1 — Per-Worksheet Result Panes + Pin/Close
-- **Separate result panes**: Each SQL worksheet gets its own titled tab: "Results — filename.sql"
-- **Pin (📌)**: Pin important query result tabs — pinned tabs survive re-execution
-- **Close (✕)**: Close individual query result sub-tabs
-- **Auto-close**: When a worksheet is closed, its results pane auto-closes too
-
-### v2.5.0 — Multi-Query Results + Import Encoding
-- **Multi-query execution**: Write multiple SELECTs separated by `;`, execute with F5, each gets its own result tab (Query 1, Query 2, etc.)
-- **Per-worksheet results**: Each SQL worksheet gets its own results panel — switch worksheets, switch results
-- **Windows-1254 encoding**: Import wizard now supports Windows-1254 (Turkish), ISO 8859-9, UTF-16 LE, in addition to UTF-8/Latin1/ASCII
-- **Architecture**: Replaced sidebar `WebviewViewProvider` with `WebviewPanel` editor tabs for results
-
-### v2.4.6 — DBA_ Views for Other Users (Root Cause Fix)
-- **Root cause**: `ALL_OBJECTS` only shows 76/110 tables, 0/1816 procedures — it's privilege-limited
-- **Fix**: Try `DBA_OBJECTS`/`DBA_TAB_COLUMNS`/`DBA_SOURCE` etc. first, fall back to `ALL_*` on ORA-00942
-- **Optimization**: Session-level `dbaAccessCache` — test once, skip DBA_ attempts if no access
-
-### v2.4.5 — Other Users: Match Oracle SQL Developer
-- **Fixed**: Object listing uses `ALL_OBJECTS` for all types (procedures, packages, functions now listed correctly)
-- **Fixed**: Tree sub-categories (Columns, Constraints, Indexes, Triggers, Grants) pass schema owner throughout
-- **Fixed**: Schema owner propagated through entire tree chain for consistent cross-schema browsing
-
-### v2.4.4 — Other Users Full Object Support
-- **Fixed**: Open Data, Columns, Constraints, Indexes, DDL, Source — all now work for Other Users' schemas
-- **Fixed**: Procedures, functions, packages listed correctly via `ALL_SOURCE` with schema owner
-- **Fixed**: Data queries use schema-qualified names (`"SCHEMA"."TABLE"`)
-
-### v2.4.3 — Fix Pinned Schema Persistence
-- **Fixed**: Declared `ingSql.pinnedSchemas` in `contributes.configuration` so VS Code properly persists pinned schemas
-
-### v2.4.2 — Persistent Schema Storage
-- **Improved**: Pinned schemas now stored in VS Code user settings (like connections) — survives extension uninstall/reinstall
-
-### v2.4.1 — Bottom Panel Results + Persistent Schemas
-- **Fixed**: Query results now appear in the **bottom panel** (matching Oracle SQL Developer layout), not as editor tabs
-- **New**: Pinned schemas under "Other Users" are persisted via `globalState` — remembered across restarts
-
-### v2.4.0 — Query Cancellation + Schema Filter
-- **New**: Running queries can now be cancelled by clicking the status bar (shows "Click to Cancel" during execution)
-- **New**: "Other Users" now uses QuickPick search — select schemas to browse instead of loading all
-- **New**: Right-click "Remove Schema" to unpin schemas from the tree
-- **Improved**: ORA-01013 (user cancel) shown as info rather than error
-
-### v2.3.9 — DEFINE Substitution Variables + Bind Fix
-- **New**: Support for `DEFINE var = value` / `UNDEFINE var` and `&var` / `&&var` substitution (SQL*Plus-style)
-- **Fixed**: Bind variable detection no longer triggers on `:names` inside string literals (e.g. `'HH24:MI:SS'`)
-
-### v2.3.8 — Plain Excel Export + Query Sheet
-- **Changed**: Excel export now plain (no colors/formatting) — matches Oracle SQL Developer behavior
-- **New**: Excel exports include a "Query" sheet with the SQL statement, export timestamp, and row count
-
-### v2.3.7 — Unified Results Grid
-- **Improved**: SELECT query results now open in the same comprehensive grid as "Open Data" (editor tab with sort, filter, export, load more)
-- **Removed**: Bottom panel results view replaced with full editor tab experience
-
-### v2.3.6 — NLS Live Reload
-- **New**: Changing NLS settings in VS Code preferences now immediately applies to all open worksheet sessions — no need to open a new worksheet
-
-### v2.3.5 — Critical: Extension Activation Fix
-- **Fixed**: Extension failed to activate on oracledb 6.x — `fetchAsString` threw `NJS-021` when passed `DB_TYPE_*` constants
-- **Fixed**: Replaced `fetchAsString` with `fetchTypeHandler` (modern oracledb 6.x API) for date/timestamp string conversion
-- **Fixed**: NLS_DATE_FORMAT now works correctly via `fetchTypeHandler` intercepting date types at fetch time
-
-### v2.3.4 — NLS Date Format Fix
-- **Fixed**: `ALTER SESSION SET NLS_DATE_FORMAT` now takes effect — root cause was `fetchAsString` silently reverting to CLOB-only when any `DB_TYPE_*` constant was undefined
-- **Fixed**: Date/timestamp types now individually registered with `fetchAsString` (each in its own try-catch) so one missing constant doesn't break all of them
-- **Added**: Diagnostic log at startup showing which fetch types are registered
-
-### v2.3.3 — Procedures & Dependencies Fix
-- **Fixed**: Other Users stored procedures/functions/packages now use `ALL_SOURCE` (broadest visibility) instead of `ALL_PROCEDURES` which had null `OBJECT_TYPE` issues
-- **Fixed**: Dependencies tab now works for Other Users' objects — was hardcoded to `OWNER = USER`, now uses the actual schema
-
-### v2.3.2 — Import Menu + Other Users Procedures Fix
-- **New**: "Import Data" now appears on right-click of the **Tables** folder (not just individual table nodes)
-- **Fixed**: Stored procedures, functions, and packages now visible under Other Users — uses `ALL_PROCEDURES` which has broader visibility than `ALL_OBJECTS`
-
-### v2.3.1 — Export Memory Optimization
-- **Optimized**: Backpressure-aware streaming — waits for OS write buffer drain before sending more data, preventing 500MB+ memory spikes
-- **Optimized**: Chunked writes (500-1000 rows per I/O call) to balance memory usage vs syscall overhead
-- **Optimized**: Writer and ExcelJS object refs nullified immediately after export completes for faster GC
-- **Improved**: XLSX row striping disabled for exports >50K rows to save memory on large datasets
-- **Improved**: WriteStream buffer increased to 64KB for better I/O throughput
-
-### v2.3.0 — Data Import Wizard
-- **New**: Full 5-step import wizard matching Oracle SQL Developer's Data Import interface:
-  - Step 1: Data Preview — file selection, format/delimiter/enclosure/encoding configuration with live preview
-  - Step 2: Import Method — table name, import method, row limits
-  - Step 3: Choose Columns — ↔ column selector with reordering
-  - Step 4: Column Definition — per-column type, size, default, nullable, comment configuration
-  - Step 5: Import Summary — full review before executing
-- **Improved**: Table creation now uses proper Oracle data types (VARCHAR2, NUMBER, DATE, etc.) with sizes from wizard
-
-### v2.2.1 — Export Timer
-- **New**: Live elapsed timer in the export progress notification (e.g., "Exported 150,000 rows... (12.3s)")
-
-### v2.2.0 — Streaming Export (Performance)
-- **Optimized**: Exports now stream rows directly from Oracle to file in 10K batches, instead of loading all rows into memory first
-- 250K+ row exports that previously timed out now complete in seconds
-- All 6 formats (CSV, XLSX, JSON, XML, SQL, HTML) rewritten with streaming writers
-- XLSX uses ExcelJS `stream.xlsx.WorkbookWriter` for constant-memory Excel generation
-- Progress notification shows real-time row count during export
-- Export cancellation now cleans up partial files
-
-### v2.1.2 — Other Users Performance Fix
-- **Fixed**: Extreme lag, scanning, and DB lock-ups when expanding the "Other Users" node. The query was optimized to use `ALL_USERS` instead of evaluating permissions recursively via `ALL_OBJECTS`. Loading schemas is now instantaneous.
-- **Improved**: System Schema filtering. Added more core Oracle internal schemas to the exclusion list to keep the browser clean.
-
-### v2.1.1 — Extension Load Crash Fix
-- **Fixed**: Module load crash (`NJS-021`) when running in Oracle Thin Mode that prevented the entire extension from loading and registering commands.
-
-### v2.1.0 — Activation Resilience Fix
-- **Fixed**: "command 'ingSql.addConnection' not found" error
-- Extension activation is now wrapped in try-catch so commands always register
-- If initialization fails, a clear error message is shown instead of silently losing all commands
-
-### v2.0.0 — Other Users in Object Browser
-- **New**: "Other Users" folder under each connection, matching Oracle SQL Developer
-- Browse any accessible schema's Tables, Views, Procedures, Functions, etc.
-- System schemas (SYS, SYSTEM, XDB, etc.) are filtered out for cleanliness
-- Full drill-down: Connection → Other Users → Schema → Category → Objects
-
-### v1.9.0 — Semicolon Handling Fix
-- **Fixed**: SQL statements ending with `;` or `/` no longer cause "SQL not properly ended" errors
-- Trailing terminators are automatically stripped before execution, matching Oracle SQL Developer behavior
-
-### v1.8.0 — SQL History Opens New Worksheet
-- **Improved**: Clicking a SQL History item now opens a **new SQL worksheet** tab (previously it inserted into the active editor)
-- New tab includes a comment header with connection name and timestamp
-- Your current worksheet stays untouched
-
-### v1.7.0 — Dedicated Session per Worksheet
-- **New**: Each SQL worksheet now gets its own Oracle session, matching Oracle SQL Developer behavior
-- **Benefit**: Transactions, session variables, and PL/SQL state are fully isolated per worksheet
-- **UI Hint**: Status bar shows `$(plug) SID: 145` for the active worksheet's Oracle Session ID
-- **Auto-release**: Sessions are released when the worksheet tab closes
-- **Pool size**: Increased from 4 to 10 to support multiple simultaneous worksheets
-- **NLS Settings**: Applied once per session instead of every query (performance improvement)
-
-### v1.6.0 — SQL Execution Status Bar
-- **New**: Status bar indicator shows real-time SQL execution state:
-  - 🔄 **Running**: `$(sync~spin) SQL Running... (2.3s)` with live timer and orange background
-  - ✅ **Success**: Green `$(check) 847 rows · 1.24s` — auto-fades after 15s
-  - ❌ **Error**: Red `$(error) ORA-00942 · 0.5s` — stays visible until next query
-- **Clickable**: Click the status bar item to focus the Results Panel
-- **Idle**: Shows `$(database) SQL Ready` when no query is active
-
-### v1.5.0 — Row Pagination & Browser Memory Safety
-- **Fixed**: Default page size unified to **100 rows** (was 10,000 for SQL Worksheet, 200 for Object Viewer)
-- **New**: Load More always fetches next 100 rows as pagination
-- **New**: Browser memory safety cap at **10,000 rows** — after reaching the limit, Load More shows "⚠ Max rows reached — use Export for full data"
-
-### v1.4.0 — Data Import via Table Right-Click
-- **Improved**: Import Data now available from right-clicking a table in the Object Browser — auto-selects the table, just pick a file (CSV/XLSX)
-- **Fixed**: Import still available from connection-level for creating new tables or choosing any table
-
-### v1.3.0 — Oracle SQL Developer Shortcuts & About Page
-- **New Shortcuts**: Describe Object at Cursor (`Shift+F4`), Show SQL History (`F8`), Format SQL (`Cmd+F7`/`Ctrl+F7`), SQL-Aware Lowercase (`Cmd+Shift+L`/`Ctrl+Shift+L`), Toggle Line Comment (`Cmd+/`/`Ctrl+/`)
-- **New About Page**: Comprehensive help page (`ING SQL: About`) listing all shortcuts, features, and supported file types
-- **Improved**: Uppercase command title updated to "Uppercase Selection (SQL-Aware)"
-
-### v1.2.0 — SQL-Aware Uppercase & .sql Support
-- **New**: `.sql` files are now recognized as Oracle SQL, enabling syntax highlighting, execution, and all extension features.
-- **Improved**: SQL-Aware Uppercase (`Cmd+Shift+U` / `Ctrl+Shift+U`) now preserves case inside double-quoted identifiers (`"myColumn"`), line comments (`-- comment`), and block comments (`/* ... */`), in addition to single-quoted strings. Handles escaped quotes (`''`) correctly. Runs in a single O(n) pass for optimal performance.
-
-### v1.1.0 — NLS Date/Timestamp Fix
-- **Fixed**: NLS settings (`NLS_DATE_FORMAT`, `NLS_TIMESTAMP_FORMAT`, etc.) now take effect. Date and timestamp values are displayed exactly as configured in VS Code Settings (`ingSql.nls.*`).
-- **Root cause**: The Oracle driver was returning native JavaScript `Date` objects instead of Oracle-formatted strings. Dates are now fetched as pre-formatted strings using the session's NLS settings.
-
-### v1.0.0 — Initial Release
-- Oracle SQL Developer clone with Object Browser, SQL Worksheet, Results Grid
-- Multi-build matrix: Full, Restricted, ± Intellisense
-- Mandatory audit logging for all data exports
-- Oracle Thick Mode with automatic Instant Client initialization
-- CSV/XLSX data import and export
-- SQL History, SQL Snippets, Explain Plan, DBMS_OUTPUT
+### Önceki Sürümlerin Özeti
+- **v2.5.6-v2.3.0**: Diğer kullanıcıları görüntüleme hataları giderildi. "İçe Aktarma Sihirbazı (Import Wizard)" ve "Excel >1M satır sınırı" aşıldı ve dosyalar parçalara bölündü. "Diğer Kullanıcılar" sekmesine meta veri sekmeleri eklendi.
+- **v2.2.0-v2.0.0**: 10K satırlık doğrudan veritabanından diske "Akış (Streaming) İle Dışa Aktarma" ve performans optimizasyonları eklendi. Eklentinin tamamen çalışmamasına sebep olan `NJS-021` yükleme çökmesi giderildi. "Tüm Kullanıcılar (Other Users)" ağacı tasarlandı.
+- **v1.9.0-v1.0.0**: Sonda bulunan ";" noktalı virgül yürütme hataları düzeltildi, Her çalışma sayfasına kendi özel Session SID verildi. "SQL Çalıştırma Durum Çubuğu" tasarlandı, `NLS_DATE_FORMAT` okuma hataları onarıldı ve zorunlu denetim ile ING eklentisi yayınlandı.
 
 ---
-*Developed by the Athena DWH Team.*
+*Athena DWH Ekibi tarafından geliştirilmiştir.*
