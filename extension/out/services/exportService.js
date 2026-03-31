@@ -115,9 +115,34 @@ class ExportService {
             };
             // Auto-download to client if user opted in
             if (downloadToDevice) {
-                vscode.env.openExternal(vscode.Uri.file(filePath));
+                try {
+                    const remoteUri = vscode.Uri.file(filePath);
+                    const defaultName = path.basename(filePath);
+                    // showSaveDialog triggers the CLIENT's native file save dialog,
+                    // even when the extension runs on a remote server (code-server, JupyterLab)
+                    const localUri = await vscode.window.showSaveDialog({
+                        defaultUri: vscode.Uri.file(defaultName),
+                        filters: {
+                            [format.toUpperCase()]: [format === 'xlsx' ? 'xlsx' : format]
+                        }
+                    });
+                    if (localUri) {
+                        const fileContent = await vscode.workspace.fs.readFile(remoteUri);
+                        await vscode.workspace.fs.writeFile(localUri, fileContent);
+                        vscode.window.showInformationMessage(`Exported ${result.rowCount.toLocaleString()} rows (${this.formatFileSize(result.fileSize)}) in ${(result.durationMs / 1000).toFixed(1)}s — saved to ${path.basename(localUri.fsPath)}`);
+                    }
+                    else {
+                        vscode.window.showInformationMessage(`Exported ${result.rowCount.toLocaleString()} rows to server: ${path.basename(filePath)} (${this.formatFileSize(result.fileSize)}) in ${(result.durationMs / 1000).toFixed(1)}s`);
+                    }
+                }
+                catch (dlErr) {
+                    console.error('[Export] Download to client failed:', dlErr.message);
+                    vscode.window.showInformationMessage(`Exported ${result.rowCount.toLocaleString()} rows to ${path.basename(filePath)} (${this.formatFileSize(result.fileSize)}) in ${(result.durationMs / 1000).toFixed(1)}s`);
+                }
             }
-            vscode.window.showInformationMessage(`Exported ${result.rowCount.toLocaleString()} rows to ${path.basename(filePath)} (${this.formatFileSize(result.fileSize)}) in ${(result.durationMs / 1000).toFixed(1)}s${downloadToDevice ? ' — downloading to your machine...' : ''}`);
+            else {
+                vscode.window.showInformationMessage(`Exported ${result.rowCount.toLocaleString()} rows to ${path.basename(filePath)} (${this.formatFileSize(result.fileSize)}) in ${(result.durationMs / 1000).toFixed(1)}s`);
+            }
             return result;
         }
         catch (err) {
