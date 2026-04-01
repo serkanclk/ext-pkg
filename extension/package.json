@@ -2,7 +2,7 @@
   "name": "ing-sql-intl",
   "displayName": "ING SQL + Intellisense",
   "description": "ING Oracle SQL Developer (Full + Intellisense)",
-  "version": "2.6.3",
+  "version": "2.6.4",
   "publisher": "ing-sql",
   "engines": {
     "vscode": "^1.85.0"

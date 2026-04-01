@@ -75,7 +75,6 @@ class ExportService {
         let format = options.format;
         let filePath = options.filePath;
         let downloadToDevice = options.downloadToDevice ?? true;
-        let isTempFile = false;
         // Either format or filePath missing -> open panel
         if (!format || !filePath) {
             if (!this.context) {
@@ -89,37 +88,27 @@ class ExportService {
             }
             format = userOptions.format;
             downloadToDevice = userOptions.downloadToDevice ?? true;
-            const userFileName = userOptions.fileName;
             if (userOptions.filePath) {
                 filePath = userOptions.filePath;
             }
-            else if (downloadToDevice) {
-                // Download-only mode: export to a temp file under /home/athena/
-                const extMap = { csv: 'csv', xlsx: 'xlsx', json: 'json', xml: 'xml', sql: 'sql', html: 'html' };
-                const tempDir = path.join('/home/athena', '.exports');
-                if (!fs.existsSync(tempDir)) {
-                    fs.mkdirSync(tempDir, { recursive: true });
-                }
-                const tempName = userFileName || `ingsql_export_${Date.now()}.${extMap[format] || 'dat'}`;
-                filePath = path.join(tempDir, tempName);
-                isTempFile = true;
-            }
             else {
-                // No file path and not downloading — shouldn't happen but guard
                 vscode.window.showErrorMessage('No file path specified for export.');
                 return undefined;
             }
         }
         const start = Date.now();
-        const exportPath = filePath; // guaranteed non-null by logic above
+        const exportPath = filePath;
+        // Ensure the target directory exists
+        const exportDir = path.dirname(exportPath);
+        if (!fs.existsSync(exportDir)) {
+            fs.mkdirSync(exportDir, { recursive: true });
+        }
         try {
             let totalRows;
             if (options.statement && options.connectionName) {
-                // ── Streaming export from database ──
                 totalRows = await this.streamingExport(format, exportPath, options.statement, options.connectionName, options.tableName);
             }
             else if (options.columns && options.rows) {
-                // ── In-memory export (small result sets from grid) ──
                 await this.writeFormat(format, exportPath, options.columns, options.rows, options.tableName, options.statement);
                 totalRows = options.rows.length;
             }
@@ -135,21 +124,14 @@ class ExportService {
                 format: format,
                 durationMs: Date.now() - start,
             };
-            // Auto-download to client if user opted in
+            // Auto-download to client
             if (downloadToDevice) {
-                await this.triggerClientDownload(exportPath, isTempFile);
+                await this.triggerClientDownload(exportPath);
             }
-            vscode.window.showInformationMessage(`Exported ${result.rowCount.toLocaleString()} rows (${this.formatFileSize(result.fileSize)}) in ${(result.durationMs / 1000).toFixed(1)}s`);
+            vscode.window.showInformationMessage(`Exported ${result.rowCount.toLocaleString()} rows (${this.formatFileSize(result.fileSize)}) to ${path.basename(exportPath)} in ${(result.durationMs / 1000).toFixed(1)}s`);
             return result;
         }
         catch (err) {
-            // Clean up temp file on error
-            if (isTempFile) {
-                try {
-                    fs.unlinkSync(exportPath);
-                }
-                catch { }
-            }
             if (err.message !== 'Export cancelled by user.') {
                 vscode.window.showErrorMessage(`Export failed: ${err.message}`);
             }
@@ -257,7 +239,7 @@ class ExportService {
      * 4. Content-Disposition: attachment forces the browser to download
      * 5. Server self-destructs after serving
      */
-    async triggerClientDownload(filePath, isTempFile = false) {
+    async triggerClientDownload(filePath) {
         const fileName = path.basename(filePath);
         const mimeTypes = {
             csv: 'text/csv', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -267,21 +249,13 @@ class ExportService {
         const mimeType = mimeTypes[ext] || 'application/octet-stream';
         return new Promise((resolve) => {
             const server = http.createServer((req, res) => {
-                // Serve the file with download headers
                 res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
                 res.setHeader('Content-Type', mimeType);
                 res.setHeader('Cache-Control', 'no-store');
                 const readStream = fs.createReadStream(filePath);
                 readStream.pipe(res);
                 readStream.on('end', () => {
-                    // Clean up: close server and optionally delete temp file
                     server.close();
-                    if (isTempFile) {
-                        setTimeout(() => { try {
-                            fs.unlinkSync(filePath);
-                        }
-                        catch { } }, 2000);
-                    }
                     resolve();
                 });
                 readStream.on('error', (err) => {
@@ -292,13 +266,10 @@ class ExportService {
                     resolve();
                 });
             });
-            // Listen on random available port
             server.listen(0, '127.0.0.1', async () => {
                 try {
                     const address = server.address();
                     const localUri = vscode.Uri.parse(`http://127.0.0.1:${address.port}/`);
-                    // asExternalUri converts localhost URL to a client-accessible URL
-                    // (e.g., via code-server/JupyterLab port forwarding proxy)
                     const externalUri = await vscode.env.asExternalUri(localUri);
                     await vscode.env.openExternal(externalUri);
                 }
@@ -309,7 +280,6 @@ class ExportService {
                     resolve();
                 }
             });
-            // Safety: kill server after 30s if no request comes
             setTimeout(() => {
                 try {
                     server.close();
@@ -597,17 +567,13 @@ class XlsxStreamWriter {
     async writeBatch(rows) {
         for (const row of rows) {
             if (this.rowIndex > this.MAX_ROWS) {
-                // Reach Excel limit, start new sheet
-                this.sheet.commit(); // Flush current sheet
+                this.sheet.commit();
                 this.sheetIndex++;
                 this.createNewSheet();
             }
-            const rowData = {};
-            this.columns.forEach((col, idx) => {
-                rowData[col.name] = row[idx];
-            });
-            const excelRow = this.sheet.addRow(rowData);
-            excelRow.commit(); // Flush row to stream immediately, release memory
+            // Use array directly — avoids creating 1000-key objects for wide tables
+            const excelRow = this.sheet.addRow(row);
+            excelRow.commit();
             this.rowIndex++;
         }
     }

@@ -297,10 +297,13 @@ class OracleService {
     async executeExportStream(sql, connectionName, batchSize, onColumns, onBatch, isCancelled) {
         const conn = await this.getConnection(connectionName);
         try {
+            // Cap prefetchRows to prevent OOM on wide tables (e.g. 1000 cols × 10k rows = 10M cells)
+            const PREFETCH_CAP = 1000;
+            const prefetchRows = Math.min(batchSize, PREFETCH_CAP);
             const result = await conn.execute(sql, {}, {
                 outFormat: oracledb_1.default.OUT_FORMAT_ARRAY,
                 resultSet: true,
-                prefetchRows: batchSize,
+                prefetchRows,
             });
             if (!result.resultSet) {
                 throw new Error('Query did not return a ResultSet.');
@@ -315,20 +318,23 @@ class OracleService {
                 scale: m.scale,
             }));
             onColumns(columns);
+            // Adaptive fetch size: keep total cells per batch under ~500k to avoid memory spikes
+            const MAX_CELLS_PER_BATCH = 500_000;
+            const fetchSize = Math.max(100, Math.min(batchSize, Math.floor(MAX_CELLS_PER_BATCH / Math.max(columns.length, 1))));
             let totalRows = 0;
             let batchNum = 0;
             while (true) {
                 if (isCancelled?.()) {
                     break;
                 }
-                const rows = (await rs.getRows(batchSize));
+                const rows = (await rs.getRows(fetchSize));
                 if (rows.length === 0) {
                     break;
                 }
                 batchNum++;
                 totalRows += rows.length;
                 await onBatch(rows, batchNum, totalRows);
-                if (rows.length < batchSize) {
+                if (rows.length < fetchSize) {
                     break; // Last batch
                 }
             }

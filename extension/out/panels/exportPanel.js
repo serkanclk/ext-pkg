@@ -51,6 +51,9 @@ class ExportPanel {
         // Handle messages from the webview
         this.panel.webview.onDidReceiveMessage(async (message) => {
             switch (message.type) {
+                case 'browseFolder':
+                    await this.handleBrowseFolder();
+                    break;
                 case 'export':
                     if (this.resolvePromise) {
                         this.resolvePromise(message.data);
@@ -76,6 +79,17 @@ class ExportPanel {
         return new Promise((resolve) => {
             this.resolvePromise = resolve;
         });
+    }
+    async handleBrowseFolder() {
+        const uri = await vscode.window.showOpenDialog({
+            canSelectFiles: false,
+            canSelectFolders: true,
+            canSelectMany: false,
+            openLabel: 'Select Export Folder'
+        });
+        if (uri && uri.length > 0 && this.panel) {
+            this.panel.webview.postMessage({ type: 'folderSelected', path: uri[0].fsPath });
+        }
     }
     getHtmlContent() {
         // Generate default filename with timestamp
@@ -201,6 +215,15 @@ class ExportPanel {
             padding: 6px 0;
         }
 
+        /* Path input group */
+        .path-input-group {
+            display: flex;
+            gap: 8px;
+        }
+        .path-input-group input[type="text"] {
+            flex: 1;
+        }
+
         /* Acknowledgment notice */
         .notice {
             margin-top: 8px;
@@ -310,9 +333,17 @@ class ExportPanel {
             </div>
         </div>
 
+        <div class="form-group">
+            <label for="serverPath">Save to Server Path:</label>
+            <div class="path-input-group">
+                <input type="text" id="serverPath" value="/home/athena/" placeholder="/home/athena/">
+                <button type="button" class="secondary" id="browseBtn" style="border: 1px solid var(--vscode-button-border, var(--vscode-focusBorder)); white-space: nowrap;">Browse...</button>
+            </div>
+        </div>
+
         <div class="notice">
             <span class="notice-icon">ℹ️</span>
-            <span class="notice-text">This data will be exported and downloaded to your local machine. By proceeding, you acknowledge responsibility for its secure handling per company data governance policies.</span>
+            <span class="notice-text">File will be saved on the server at the specified path and also downloaded to your local machine. By proceeding, you acknowledge responsibility for its secure handling per company data governance policies.</span>
         </div>
     </div>
     
@@ -328,6 +359,8 @@ class ExportPanel {
         const csvOptions = document.getElementById('csv-options');
         const fileNameInput = document.getElementById('fileName');
         const fileExtSpan = document.getElementById('fileExt');
+        const serverPathInput = document.getElementById('serverPath');
+        const browseBtn = document.getElementById('browseBtn');
         const cancelBtn = document.getElementById('cancelBtn');
         const exportBtn = document.getElementById('exportBtn');
 
@@ -345,6 +378,10 @@ class ExportPanel {
         formatSelect.addEventListener('change', updateExtension);
         updateExtension();
 
+        browseBtn.addEventListener('click', () => {
+            vscode.postMessage({ type: 'browseFolder' });
+        });
+
         cancelBtn.addEventListener('click', () => {
             vscode.postMessage({ type: 'cancel' });
         });
@@ -357,16 +394,33 @@ class ExportPanel {
                 return;
             }
 
+            let serverDir = serverPathInput.value.trim();
+            if (!serverDir) {
+                serverPathInput.style.borderColor = 'var(--vscode-inputValidation-errorBorder, red)';
+                serverPathInput.focus();
+                return;
+            }
+            // Ensure trailing slash
+            if (!serverDir.endsWith('/')) { serverDir += '/'; }
+
             const ext = extMap[formatSelect.value] || '.dat';
             const fullFileName = name + ext;
 
             const data = {
                 format: formatSelect.value,
                 fileName: fullFileName,
+                filePath: serverDir + fullFileName,
                 downloadToDevice: true
             };
             
             vscode.postMessage({ type: 'export', data });
+        });
+
+        window.addEventListener('message', event => {
+            const message = event.data;
+            if (message.type === 'folderSelected') {
+                serverPathInput.value = message.path;
+            }
         });
     </script>
 </body>
