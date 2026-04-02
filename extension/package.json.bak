@@ -2,7 +2,7 @@
   "name": "ing-sql",
   "displayName": "ING SQL",
   "description": "Oracle SQL Developer for VS Code (ING Specific)",
-  "version": "2.6.5",
+  "version": "2.6.6",
   "publisher": "ing-sql",
   "engines": {
     "vscode": "^1.85.0"

@@ -150,7 +150,13 @@ class ExportService {
         }, async (progress, token) => {
             const oracleService = oracleService_1.OracleService.getInstance();
             let columns = [];
-            const fileStream = fs.createWriteStream(filePath, { encoding: 'utf-8', highWaterMark: 64 * 1024 });
+            // XLSX is a binary format (ZIP archive) — encoding MUST NOT be set
+            // or Node.js will re-encode ExcelJS's binary output as UTF-8, corrupting the ZIP.
+            const streamOptions = { highWaterMark: 64 * 1024 };
+            if (format !== 'xlsx') {
+                streamOptions.encoding = 'utf-8';
+            }
+            const fileStream = fs.createWriteStream(filePath, streamOptions);
             let writer = null;
             const exportStart = Date.now();
             let totalRows = 0;
@@ -254,7 +260,12 @@ class ExportService {
     // In-memory write (for small result-grid exports)
     // ─────────────────────────────────────────────
     async writeFormat(format, filePath, columns, rows, tableName, statement) {
-        const stream = fs.createWriteStream(filePath, { encoding: 'utf-8' });
+        // XLSX is binary (ZIP) — do not set encoding or it corrupts the archive
+        const streamOpts = {};
+        if (format !== 'xlsx') {
+            streamOpts.encoding = 'utf-8';
+        }
+        const stream = fs.createWriteStream(filePath, streamOpts);
         const writer = this.createStreamWriter(format, stream, columns, tableName, statement);
         writer.writeHeader();
         await writer.writeBatch(rows);
@@ -755,26 +766,54 @@ class XlsxStreamWriter {
     }
     async writeBatch(rows) {
         const colCount = this.columns.length;
+        // Backpressure: check stream drain every N rows to prevent ZIP buffer overflow
+        const DRAIN_INTERVAL = 500;
+        let sinceLastDrain = 0;
         for (const row of rows) {
             if (this.rowIndex > this.MAX_ROWS) {
                 await this.sheet.commit();
                 this.sheetIndex++;
                 this.createNewSheet();
             }
-            // Sanitize every cell value and ensure row length matches column count.
-            // Mismatched array lengths are another source of ExcelJS streaming corruption.
-            const sanitized = new Array(colCount);
+            // Use getRow() + getCell() instead of addRow(array).
+            //
+            // WHY: ExcelJS's addRow(array) in streaming mode with useSharedStrings:false
+            // calculates column references (A1, B1, C1...) by array position. When cells
+            // contain empty strings (''), ExcelJS may write them as <c> elements with
+            // type="inlineStr" but empty content. At 200k+ rows, the accumulated inconsistency
+            // in the XML structure corrupts the ZIP archive's central directory.
+            //
+            // getCell(colIndex) EXPLICITLY sets the column reference, so even null/empty
+            // cells maintain correct positioning without writing ambiguous XML.
+            const excelRow = this.sheet.getRow(this.rowIndex);
             for (let i = 0; i < colCount; i++) {
-                sanitized[i] = this.sanitizeValue(i < row.length ? row[i] : null);
+                const val = this.sanitizeValue(i < row.length ? row[i] : null);
+                // Only write cells that have actual values.
+                // Null/empty cells: getCell() already knows its column reference (i+1),
+                // so ExcelJS either writes a proper empty cell or omits it cleanly.
+                if (val !== '' && val !== null && val !== undefined) {
+                    excelRow.getCell(i + 1).value = val;
+                }
+                // Empty values: cell exists with correct column ref but no value →
+                // Excel renders it as blank, column position is preserved.
             }
-            const excelRow = this.sheet.addRow(sanitized);
             excelRow.commit();
             this.rowIndex++;
+            sinceLastDrain++;
+            // Periodically yield to let the underlying fs.WriteStream flush.
+            if (sinceLastDrain >= DRAIN_INTERVAL) {
+                sinceLastDrain = 0;
+                if (this.stream.writableNeedDrain) {
+                    await new Promise(resolve => this.stream.once('drain', resolve));
+                }
+            }
         }
     }
     async writeFooter(totalRows) {
-        // Auto-filter on data sheet
-        if (totalRows > 0) {
+        // Auto-filter: skip for large datasets (100k+).
+        // ExcelJS streaming mode can produce corrupt sheet XML when autoFilter
+        // references a very large row range in combination with committed rows.
+        if (totalRows > 0 && totalRows <= 100000) {
             this.sheet.autoFilter = {
                 from: { row: 1, column: 1 },
                 to: { row: totalRows + 1, column: this.columns.length }
@@ -795,6 +834,10 @@ class XlsxStreamWriter {
             infoSheet.addRow({ prop: 'Exported At', val: new Date().toISOString() }).commit();
             infoSheet.addRow({ prop: 'Total Rows', val: totalRows }).commit();
             await infoSheet.commit();
+        }
+        // Wait for stream to be fully drained before finalizing the ZIP
+        if (this.stream.writableNeedDrain) {
+            await new Promise(resolve => this.stream.once('drain', resolve));
         }
         await this.workbook.commit();
         // Release ExcelJS internal refs

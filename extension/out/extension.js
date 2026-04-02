@@ -109,7 +109,14 @@ function activate(context) {
                         }
                     }
                     catch (err) {
-                        await auditLogService.logFailedExport(data.format, 'RESULTS_GRID', data.connectionName, profile.username, data.objectName || null, data.sql, err.message);
+                        console.error('[Export] ObjectViewer export error:', err);
+                        vscode.window.showErrorMessage(`Export error: ${err.message}`);
+                        try {
+                            await auditLogService.logFailedExport(data.format, 'RESULTS_GRID', data.connectionName, profile.username, data.objectName || null, data.sql, err.message);
+                        }
+                        catch (auditErr) {
+                            console.warn('[AuditLog] Failed to log export error:', auditErr.message);
+                        }
                     }
                 });
                 objectViewers.set(key, viewer);
@@ -150,7 +157,14 @@ function activate(context) {
                 }
             }
             catch (err) {
-                await auditLogService.logFailedExport(data.format, data.source, activeConn, activeProfile.username, null, data.results.statement, err.message);
+                console.error('[Export] ResultsGrid export error:', err);
+                vscode.window.showErrorMessage(`Export error: ${err.message}`);
+                try {
+                    await auditLogService.logFailedExport(data.format, data.source, activeConn, activeProfile.username, null, data.results.statement, err.message);
+                }
+                catch (auditErr) {
+                    console.warn('[AuditLog] Failed to log export error:', auditErr.message);
+                }
             }
         });
         // ─── Register Commands ───
@@ -573,8 +587,14 @@ function activate(context) {
                     }
                 }
                 catch (err) {
-                    await auditLogService.logFailedExport('csv', 'OBJECT_BROWSER', item.connectionName, profile.username, item.objectName, null, err.message);
+                    console.error('[Export] ObjectBrowser export error:', err);
                     vscode.window.showErrorMessage(`Export error: ${err.message}`);
+                    try {
+                        await auditLogService.logFailedExport('csv', 'OBJECT_BROWSER', item.connectionName, profile.username, item.objectName, null, err.message);
+                    }
+                    catch (auditErr) {
+                        console.warn('[AuditLog] Failed to log export error:', auditErr.message);
+                    }
                 }
             }));
         }
