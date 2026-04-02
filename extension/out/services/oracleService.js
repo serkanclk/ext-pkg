@@ -289,10 +289,48 @@ class OracleService {
         }
     }
     /**
+     * Stream query results using oracledb's queryStream for maximum performance.
+     * This follows Node.js Readable stream patterns, allowing the caller to pipe data.
+     * Returns a Node.js Readable stream that emits rows as arrays.
+     */
+    async executeExportQueryStream(sql, connectionName, onColumns) {
+        const conn = await this.getConnection(connectionName);
+        // Use queryStream for true event-based streaming
+        // queryStream exists at runtime but may not be in older type defs
+        const stream = conn.queryStream(sql, {}, {
+            outFormat: oracledb_1.default.OUT_FORMAT_ARRAY,
+        });
+        stream.on('metadata', (meta) => {
+            const columns = meta.map((m) => ({
+                name: m.name,
+                dbType: this.getDbTypeName(m.dbType),
+                nullable: m.nullable !== false,
+                byteSize: m.byteSize,
+                precision: m.precision,
+                scale: m.scale,
+            }));
+            onColumns(columns);
+        });
+        // Ensure connection is closed when the stream is finished or fails
+        let cleaned = false;
+        const cleanup = async () => {
+            if (cleaned) {
+                return;
+            }
+            cleaned = true;
+            try {
+                await conn.close();
+            }
+            catch (_err) { }
+        };
+        stream.on('end', cleanup);
+        stream.on('error', cleanup);
+        stream.on('close', cleanup);
+        return stream;
+    }
+    /**
      * Stream query results in batches for export.
-     * Instead of accumulating all rows in memory, this calls onBatch() for each chunk,
-     * allowing the caller to write directly to file and discard the batch.
-     * Returns the total number of rows streamed.
+     * @deprecated Use executeExportQueryStream for better performance.
      */
     async executeExportStream(sql, connectionName, batchSize, onColumns, onBatch, isCancelled) {
         const conn = await this.getConnection(connectionName);

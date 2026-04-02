@@ -139,7 +139,8 @@ class ExportService {
         }
     }
     // ─────────────────────────────────────────────────────────────────────
-    // Streaming export — fetch batches from Oracle, write directly to file
+    // Streaming export — uses queryStream() to stream rows from Oracle
+    // directly to disk without accumulating in RAM.
     // ─────────────────────────────────────────────────────────────────────
     async streamingExport(format, filePath, sql, connectionName, tableName) {
         return await vscode.window.withProgress({
@@ -149,24 +150,63 @@ class ExportService {
         }, async (progress, token) => {
             const oracleService = oracleService_1.OracleService.getInstance();
             let columns = [];
-            const stream = fs.createWriteStream(filePath, { encoding: 'utf-8', highWaterMark: 64 * 1024 });
+            const fileStream = fs.createWriteStream(filePath, { encoding: 'utf-8', highWaterMark: 64 * 1024 });
             let writer = null;
             const exportStart = Date.now();
-            progress.report({ message: 'Initializing export cursor...' });
+            let totalRows = 0;
+            let batchBuffer = [];
+            progress.report({ message: 'Initializing export stream...' });
             try {
-                const totalRows = await oracleService.executeExportStream(sql, connectionName, EXPORT_BATCH_SIZE, (cols) => {
+                // Get a queryStream from Oracle — emits rows one by one via 'data' events
+                const queryStream = await oracleService.executeExportQueryStream(sql, connectionName, (cols) => {
                     columns = cols;
-                    writer = this.createStreamWriter(format, stream, columns, tableName, sql);
+                    writer = this.createStreamWriter(format, fileStream, columns, tableName, sql);
                     writer.writeHeader();
-                }, async (rows, _batchNum, totalSoFar) => {
-                    await writer.writeBatch(rows);
-                    const elapsed = ((Date.now() - exportStart) / 1000).toFixed(1);
-                    progress.report({
-                        message: `Exported ${totalSoFar.toLocaleString()} rows... (${elapsed}s)`
+                });
+                // Process rows as they arrive from Oracle
+                await new Promise((resolve, reject) => {
+                    queryStream.on('data', (row) => {
+                        if (token.isCancellationRequested) {
+                            queryStream.destroy();
+                            return;
+                        }
+                        batchBuffer.push(row);
+                        totalRows++;
+                        // Flush to disk in batches of EXPORT_BATCH_SIZE for efficiency
+                        if (batchBuffer.length >= EXPORT_BATCH_SIZE) {
+                            // Pause the Oracle stream to apply backpressure
+                            queryStream.pause();
+                            const batch = batchBuffer;
+                            batchBuffer = [];
+                            writer.writeBatch(batch).then(() => {
+                                const elapsed = ((Date.now() - exportStart) / 1000).toFixed(1);
+                                progress.report({
+                                    message: `Exported ${totalRows.toLocaleString()} rows... (${elapsed}s)`
+                                });
+                                // Resume fetching from Oracle
+                                queryStream.resume();
+                            }).catch(reject);
+                        }
                     });
-                }, () => token.isCancellationRequested);
+                    queryStream.on('end', async () => {
+                        try {
+                            // Flush remaining rows
+                            if (batchBuffer.length > 0 && writer) {
+                                await writer.writeBatch(batchBuffer);
+                                batchBuffer = [];
+                            }
+                            resolve();
+                        }
+                        catch (err) {
+                            reject(err);
+                        }
+                    });
+                    queryStream.on('error', (err) => {
+                        reject(err);
+                    });
+                });
                 if (token.isCancellationRequested) {
-                    stream.end();
+                    fileStream.end();
                     try {
                         fs.unlinkSync(filePath);
                     }
@@ -180,17 +220,19 @@ class ExportService {
                 // Release writer refs so GC can collect column data, ExcelJS objects, etc.
                 writer = null;
                 columns = [];
-                // Wait for stream to finish flushing to disk
+                batchBuffer = [];
+                // Wait for file stream to finish flushing to disk
                 await new Promise((resolve, reject) => {
-                    stream.end(() => resolve());
-                    stream.on('error', reject);
+                    fileStream.end(() => resolve());
+                    fileStream.on('error', reject);
                 });
                 return totalRows;
             }
             catch (err) {
-                stream.end();
+                fileStream.end();
                 writer = null;
                 columns = [];
+                batchBuffer = [];
                 throw err;
             }
         });
@@ -233,37 +275,126 @@ class ExportService {
     }
     /**
      * Triggers a client-side download by spinning up a temporary HTTP server.
+     *
+     * Architecture:
      * 1. Starts an HTTP server on a random port serving the file
-     * 2. Uses vscode.env.asExternalUri to get a client-accessible URL (handles port forwarding)
+     * 2. Uses vscode.env.asExternalUri for port forwarding (Remote SSH, code-server)
      * 3. Uses vscode.env.openExternal to open the URL in the browser
      * 4. Content-Disposition: attachment forces the browser to download
-     * 5. Server self-destructs after serving
+     * 5. Server stays alive until the download completes OR a dynamic timeout expires
+     *
+     * Key fixes for large file downloads (50MB+):
+     * - Content-Length header: enables browser progress bar, prevents premature truncation
+     * - RFC 5987 filename*: ensures correct file extension in "Save As" dialog
+     * - Dynamic timeout: scales with file size (minimum 60s, +60s per 50MB)
+     * - Server closes only after transfer completes, not on a fixed timer
      */
     async triggerClientDownload(filePath) {
         const fileName = path.basename(filePath);
         const mimeTypes = {
-            csv: 'text/csv', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            json: 'application/json', xml: 'application/xml', sql: 'text/plain', html: 'text/html'
+            csv: 'text/csv',
+            xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            json: 'application/json',
+            xml: 'application/xml',
+            sql: 'text/plain',
+            html: 'text/html'
         };
         const ext = path.extname(filePath).slice(1).toLowerCase();
         const mimeType = mimeTypes[ext] || 'application/octet-stream';
+        // Get file size for Content-Length and dynamic timeout calculation
+        let fileSize;
+        try {
+            fileSize = fs.statSync(filePath).size;
+        }
+        catch {
+            fileSize = 0;
+        }
+        // Dynamic timeout: minimum 60s, +60s per 50MB chunk
+        // 10MB  → 60s
+        // 50MB  → 120s
+        // 100MB → 180s
+        // 500MB → 660s (11 minutes)
+        const TIMEOUT_BASE_MS = 60_000;
+        const TIMEOUT_PER_50MB_MS = 60_000;
+        const dynamicTimeoutMs = TIMEOUT_BASE_MS + Math.ceil(fileSize / (50 * 1024 * 1024)) * TIMEOUT_PER_50MB_MS;
         return new Promise((resolve) => {
-            const server = http.createServer((req, res) => {
-                res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-                res.setHeader('Content-Type', mimeType);
-                res.setHeader('Cache-Control', 'no-store');
-                const readStream = fs.createReadStream(filePath);
-                readStream.pipe(res);
-                readStream.on('end', () => {
-                    server.close();
+            let resolved = false;
+            const safeResolve = () => {
+                if (!resolved) {
+                    resolved = true;
                     resolve();
+                }
+            };
+            // Track active download transfers so server stays alive during download
+            let activeTransfers = 0;
+            let timeoutHandle;
+            const server = http.createServer((req, res) => {
+                // Handle preflight / favicon / unexpected requests gracefully
+                if (req.url !== '/' && req.url !== '/' + encodeURIComponent(fileName)) {
+                    res.statusCode = 404;
+                    res.end();
+                    return;
+                }
+                activeTransfers++;
+                // --- Headers ---
+                // RFC 5987 Content-Disposition: provides both ASCII fallback and UTF-8 filename
+                // This ensures the browser always shows the correct filename WITH extension
+                // in the "Save As" dialog, even with special characters (Turkish İ, ş, etc.)
+                const asciiName = fileName.replace(/[^\x20-\x7E]/g, '_');
+                const encodedName = encodeURIComponent(fileName).replace(/'/g, '%27');
+                res.setHeader('Content-Disposition', `attachment; filename="${asciiName}"; filename*=UTF-8''${encodedName}`);
+                res.setHeader('Content-Type', mimeType);
+                res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+                res.setHeader('Pragma', 'no-cache');
+                // Content-Length: critical for large files
+                // - Enables browser download progress bar
+                // - Prevents chunked transfer encoding (which can be cut by proxies)
+                // - Browser knows exactly how much data to expect → no premature "complete"
+                if (fileSize > 0) {
+                    res.setHeader('Content-Length', fileSize);
+                }
+                // Disable keep-alive to prevent socket hang after transfer
+                res.setHeader('Connection', 'close');
+                // --- Stream the file ---
+                const readStream = fs.createReadStream(filePath, { highWaterMark: 256 * 1024 });
+                readStream.pipe(res);
+                // Transfer completed successfully
+                res.on('finish', () => {
+                    activeTransfers--;
+                    console.log(`[Export] Download complete: ${fileName} (${(fileSize / (1024 * 1024)).toFixed(1)} MB)`);
+                    // Close server after a short delay (browser may send follow-up requests)
+                    setTimeout(() => {
+                        if (activeTransfers <= 0) {
+                            try {
+                                server.close();
+                            }
+                            catch { }
+                            safeResolve();
+                        }
+                    }, 2000);
+                });
+                // Client disconnected before transfer completed
+                res.on('close', () => {
+                    if (!res.writableFinished) {
+                        activeTransfers--;
+                        readStream.destroy();
+                        console.warn(`[Export] Client disconnected during download: ${fileName}`);
+                    }
                 });
                 readStream.on('error', (err) => {
+                    activeTransfers--;
                     console.error('[Export] File streaming error:', err.message);
-                    res.statusCode = 500;
+                    if (!res.headersSent) {
+                        res.statusCode = 500;
+                    }
                     res.end('File read error');
-                    server.close();
-                    resolve();
+                    if (activeTransfers <= 0) {
+                        try {
+                            server.close();
+                        }
+                        catch { }
+                        safeResolve();
+                    }
                 });
             });
             server.listen(0, '127.0.0.1', async () => {
@@ -271,22 +402,35 @@ class ExportService {
                     const address = server.address();
                     const localUri = vscode.Uri.parse(`http://127.0.0.1:${address.port}/`);
                     const externalUri = await vscode.env.asExternalUri(localUri);
+                    console.log(`[Export] Download server started on port ${address.port}, timeout=${Math.round(dynamicTimeoutMs / 1000)}s, fileSize=${(fileSize / (1024 * 1024)).toFixed(1)}MB`);
                     await vscode.env.openExternal(externalUri);
                 }
                 catch (err) {
                     console.error('[Export] Download server error:', err.message);
                     server.close();
                     vscode.window.showWarningMessage(`Export saved on server at: ${filePath}`);
-                    resolve();
+                    safeResolve();
                 }
             });
-            setTimeout(() => {
+            // Safety timeout: dynamic based on file size
+            // This is a last-resort fallback — normally the server closes after transfer
+            timeoutHandle = setTimeout(() => {
+                if (activeTransfers > 0) {
+                    console.warn(`[Export] Download timeout reached (${Math.round(dynamicTimeoutMs / 1000)}s) with ${activeTransfers} active transfer(s). Closing server.`);
+                }
                 try {
                     server.close();
                 }
                 catch { }
-                resolve();
-            }, 30000);
+                safeResolve();
+            }, dynamicTimeoutMs);
+            // Clean up timeout if server closes naturally (download completed)
+            server.on('close', () => {
+                if (timeoutHandle) {
+                    clearTimeout(timeoutHandle);
+                    timeoutHandle = null;
+                }
+            });
         });
     }
 }
@@ -364,19 +508,25 @@ class JsonStreamWriter {
         this.stream.write('[\n');
     }
     async writeBatch(rows) {
-        let chunk = '';
-        for (const row of rows) {
-            const obj = {};
-            this.columns.forEach((col, idx) => {
-                obj[col.name] = row[idx];
-            });
-            if (!this.isFirst) {
-                chunk += ',\n';
+        // Write each row individually to avoid building a massive string in memory.
+        // This is critical for 50MB+ exports where batch concatenation caused OOM.
+        const MICRO_CHUNK = 200;
+        for (let i = 0; i < rows.length; i += MICRO_CHUNK) {
+            const end = Math.min(i + MICRO_CHUNK, rows.length);
+            let chunk = '';
+            for (let j = i; j < end; j++) {
+                const obj = {};
+                this.columns.forEach((col, idx) => {
+                    obj[col.name] = rows[j][idx];
+                });
+                if (!this.isFirst) {
+                    chunk += ',\n';
+                }
+                chunk += '  ' + JSON.stringify(obj);
+                this.isFirst = false;
             }
-            chunk += '  ' + JSON.stringify(obj);
-            this.isFirst = false;
+            await streamWrite(this.stream, chunk);
         }
-        await streamWrite(this.stream, chunk);
     }
     async writeFooter() {
         await streamWrite(this.stream, '\n]\n');
@@ -544,7 +694,15 @@ class XlsxStreamWriter {
     }
     writeHeader() {
         const ExcelJS = require('exceljs');
-        this.workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: this.stream });
+        this.workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
+            stream: this.stream,
+            // Disable shared strings to prevent corruption on large files (200k+ rows).
+            // When enabled, ExcelJS builds a massive shared strings XML table that can
+            // produce malformed ZIP archives. Disabling it writes inline strings per-cell
+            // which is slightly larger but bulletproof.
+            useSharedStrings: false,
+            useStyles: true,
+        });
         this.workbook.creator = 'ING SQL for VS Code';
         this.workbook.created = new Date();
         this.createNewSheet();
@@ -564,15 +722,52 @@ class XlsxStreamWriter {
         headerRow.commit();
         this.rowIndex = 2;
     }
+    /**
+     * Sanitize a single cell value for ExcelJS streaming.
+     *
+     * ExcelJS WorkbookWriter (streaming mode) has known issues with:
+     * - null/undefined: Cells are omitted from XML → column references shift → corrupt file
+     * - Buffer objects: Cannot be serialized to XLSX cell XML
+     * - Date objects: Can cause type confusion in streaming mode
+     * - Very long strings: Can exceed XML element limits
+     *
+     * This method ensures every cell has a safe, writable value.
+     */
+    sanitizeValue(val) {
+        // null / undefined → empty string (preserves column position in XML)
+        if (val === null || val === undefined) {
+            return '';
+        }
+        // Buffer (BLOB/RAW) → base64 string
+        if (Buffer.isBuffer(val)) {
+            return val.toString('base64');
+        }
+        // Date → ISO string (avoids ExcelJS date serialization bugs in streaming)
+        if (val instanceof Date) {
+            return val.toISOString();
+        }
+        // Number → keep as-is for proper Excel number formatting
+        if (typeof val === 'number' || typeof val === 'boolean') {
+            return val;
+        }
+        // Everything else → string
+        return String(val);
+    }
     async writeBatch(rows) {
+        const colCount = this.columns.length;
         for (const row of rows) {
             if (this.rowIndex > this.MAX_ROWS) {
-                this.sheet.commit();
+                await this.sheet.commit();
                 this.sheetIndex++;
                 this.createNewSheet();
             }
-            // Use array directly — avoids creating 1000-key objects for wide tables
-            const excelRow = this.sheet.addRow(row);
+            // Sanitize every cell value and ensure row length matches column count.
+            // Mismatched array lengths are another source of ExcelJS streaming corruption.
+            const sanitized = new Array(colCount);
+            for (let i = 0; i < colCount; i++) {
+                sanitized[i] = this.sanitizeValue(i < row.length ? row[i] : null);
+            }
+            const excelRow = this.sheet.addRow(sanitized);
             excelRow.commit();
             this.rowIndex++;
         }
@@ -585,7 +780,7 @@ class XlsxStreamWriter {
                 to: { row: totalRows + 1, column: this.columns.length }
             };
         }
-        this.sheet.commit();
+        await this.sheet.commit();
         // Add "Query" info sheet with the SQL statement
         if (this.sql) {
             const infoSheet = this.workbook.addWorksheet('Query');
@@ -599,7 +794,7 @@ class XlsxStreamWriter {
             infoSheet.addRow({ prop: 'SQL Statement', val: this.sql }).commit();
             infoSheet.addRow({ prop: 'Exported At', val: new Date().toISOString() }).commit();
             infoSheet.addRow({ prop: 'Total Rows', val: totalRows }).commit();
-            infoSheet.commit();
+            await infoSheet.commit();
         }
         await this.workbook.commit();
         // Release ExcelJS internal refs
