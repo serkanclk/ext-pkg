@@ -50,16 +50,27 @@ Denetim sistemi, maksimum güvenlik için koda gömülmüştür. Her veri aktar�
 - **VPN/Uzak bağlantılarda**: İndirme sunucusu dosya boyutuna göre dinamik zaman aşımı kullanır (60s + 50MB başına 60s). Çok büyük dosyalar için dosyayı sunucudan doğrudan kopyalamayı tercih edebilirsiniz.
 - Export işlemi, `oracledb.queryStream()` kullanarak Oracle'dan satır satır veri çeker ve doğrudan diske yazar. RAM'de birikim yapılmaz.
 
-## 📦 Dağıtım Dosyaları (V2.6.6)
+## 📦 Dağıtım Dosyaları (V2.6.8)
 
 | Sürüm | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
-| **Full** | `ing-sql-linux-x64-2.6.6.vsix` | `ing-sql-darwin-arm64-2.6.6.vsix` |
-| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.6.6.vsix` | `ing-sql-intl-darwin-arm64-2.6.6.vsix` |
-| **Restricted** | `ing-sql-restricted-linux-x64-2.6.6.vsix` | `ing-sql-restricted-darwin-arm64-2.6.6.vsix` |
-| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.6.6.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.6.6.vsix` |
+| **Full** | `ing-sql-linux-x64-2.6.8.vsix` | `ing-sql-darwin-arm64-2.6.8.vsix` |
+| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.6.8.vsix` | `ing-sql-intl-darwin-arm64-2.6.8.vsix` |
+| **Restricted** | `ing-sql-restricted-linux-x64-2.6.8.vsix` | `ing-sql-restricted-darwin-arm64-2.6.8.vsix` |
+| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.6.8.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.6.8.vsix` |
 
 ## 📋 Sürüm Notları (Changelog)
+
+### v2.6.8 — SQL Çalışma Sayfası Daraltma & Akıllı Yorum Okuma
+- **Dosya Daraltma/Genişletme (Folding)**: Sol kenar boşluğunda (gutter) SQL kodlarını içe katlama özelliği (*folding*) eklendi. Tüm `SELECT, WITH, INSERT` vb. bloklarınızı, yorum (*block comment*) alanlarını veya alt parantezleri pratik bir biçimde genişletip daraltabilirsiniz.
+- **Yorum Kaynaklı Boş Sorgu Hataları**: SQL Çalışma sahasında komut noktalı virgül (`;`) ile bitsin veya bitmesin, satır sonunda bulunan yorumlar yüzünden ORACLEDB'ye geçersiz SQL komutları gönderilme ve *boş query* dönme sorunu (ORA-00911 hataları) kalıcı olarak yalıtıldı.
+- **Sorgu Algılama**: Parantez içine alınmış sorgular (`(SELECT...)`) ve komut aralarında boşluksuz kodlu sorgular (`SELECT*`) artık non-query olarak değil, beklenen `SELECT` aksiyonu ile doğru yanıtlarla işlenecek eklentiler getirildi.
+
+### v2.6.7 — Grid UX İyileştirmeleri
+- **Sağ Tıklama Bağlam Menüsü (Context Menu)**: Query Result ve Data tablolarında sağ tıklama ile `Count Rows`, `Copy Selected Column Headers`, `Export` ve `Copy` seçenekleri eklendi. Count Rows, modal pencerede satır sayısını gösterir ve kopyalama imkanı sunar.
+- **Sütun Genişliği Ayarlama (Column Resize)**: Sütun başlıklarının sağ kenarına gelindiğinde sürükleyerek sütun genişliği ayarlanabilir. Tüm grid tablolarında çalışır.
+- **Tarih Sıralama Düzeltmesi**: DATE, TIMESTAMP gibi tarih kolonlarında sort işlemi artık doğru çalışır. Tarih değerleri string yerine Date olarak parse edilip kronolojik sıralanır.
+- **Copy Selected Column Headers**: Sağ tıklama menüsünden tüm kolon başlıklarını tab-separated olarak panoya kopyalar.
 
 ### v2.6.6 — Kararlı Büyük Dosya Export Motoru
 - **XLSX 200K+ Satır Bozulma Düzeltmesi**: `null`, boş string ve `N/A` değer içeren tablolarda 200K satırı aşan Excel export'larda dosya bozulması tamamen çözüldü. Kök neden: ExcelJS `addRow(array)` streaming modunda boş hücreleri `<c t="inlineStr">` olarak yazar ve kolon referans kaymasına neden olur. Çözüm: `getRow().getCell()` ile her hücrenin kolon referansı açıkça belirtilir, boş hücreler XML'den temiz şekilde atlanır.

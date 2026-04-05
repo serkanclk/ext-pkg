@@ -157,6 +157,37 @@ class ObjectViewerPanel {
                         vscode.env.clipboard.writeText(message.value);
                     }
                     break;
+                case 'countRows': {
+                    try {
+                        const oracleService = oracleService_1.OracleService.getInstance();
+                        let countSql;
+                        if (message.statement) {
+                            // Query result mode — use the original query statement
+                            countSql = `SELECT COUNT(*) AS CNT FROM (${message.statement.replace(/;\s*$/, '')})`;
+                        }
+                        else if (this.currentObjectName) {
+                            // Object data mode — count from the table
+                            const qualifiedName = this.currentSchemaName
+                                ? `"${this.currentSchemaName}"."${this.currentObjectName}"`
+                                : `"${this.currentObjectName}"`;
+                            countSql = `SELECT COUNT(*) AS CNT FROM ${qualifiedName}`;
+                        }
+                        else {
+                            break;
+                        }
+                        const countResult = await oracleService.executeQuery(countSql, {}, {
+                            maxRows: 1,
+                            connectionName: this.currentConnectionName
+                        });
+                        const count = countResult.rows?.[0]?.[0] ?? 0;
+                        this.panel?.webview.postMessage({ type: 'countRowsResult', count: Number(count) });
+                    }
+                    catch (err) {
+                        vscode.window.showErrorMessage(`Count Rows Error: ${err.message}`);
+                        this.panel?.webview.postMessage({ type: 'countRowsResult', count: -1, error: err.message });
+                    }
+                    break;
+                }
             }
         }
         catch (err) {
@@ -490,6 +521,60 @@ class ObjectViewerPanel {
         th.sort-asc::after { content: ' ▲'; opacity: 0.7; }
         th.sort-desc::after { content: ' ▼'; opacity: 0.7; }
 
+        /* ── Column Resize ── */
+        th { position: relative; }
+        th .col-resizer {
+            position: absolute; right: -2px; top: 0; bottom: 0; width: 5px;
+            cursor: col-resize; z-index: 20; background: transparent;
+        }
+        th .col-resizer:hover, th .col-resizer.active { background: var(--primary-color); }
+
+        /* ── Context Menu ── */
+        .ctx-menu {
+            position: fixed; z-index: 1000; min-width: 180px;
+            background: var(--vscode-menu-background, var(--header-bg));
+            color: var(--vscode-menu-foreground, var(--fg-color));
+            border: 1px solid var(--vscode-menu-border, var(--border-color));
+            border-radius: 4px; padding: 4px 0;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3); display: none;
+            font-size: 12px;
+        }
+        .ctx-menu.show { display: block; }
+        .ctx-menu-item {
+            padding: 5px 20px; cursor: pointer; white-space: nowrap;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .ctx-menu-item:hover {
+            background: var(--vscode-menu-selectionBackground, var(--primary-color));
+            color: var(--vscode-menu-selectionForeground, #fff);
+        }
+        .ctx-menu-sep { height: 1px; margin: 4px 8px; background: var(--border-color); }
+
+        /* ── Count Rows Modal ── */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); z-index: 2000;
+            display: none; align-items: center; justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-box {
+            background: var(--vscode-editorWidget-background, #252526);
+            border: 1px solid var(--border-color); border-radius: 6px;
+            padding: 20px 30px; min-width: 220px; text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        .modal-box h3 { margin-bottom: 14px; font-size: 14px; font-weight: 600; }
+        .modal-box .modal-count { font-size: 16px; margin-bottom: 16px; }
+        .modal-box .modal-actions { display: flex; gap: 8px; justify-content: center; }
+        .modal-box button {
+            padding: 5px 16px; border-radius: 3px; border: 1px solid var(--border-color);
+            cursor: pointer; font-size: 12px;
+            background: var(--vscode-button-background, #0e639c);
+            color: var(--vscode-button-foreground, #fff);
+        }
+        .modal-box button:hover { opacity: 0.9; }
+        .modal-box button.secondary { background: transparent; color: var(--fg-color); }
+
         /* Status Bar */
         .status-bar {
             display: flex;
@@ -663,6 +748,25 @@ class ObjectViewerPanel {
             </table>
         </div>
     </div>
+    <!-- Context Menu -->
+    <div class="ctx-menu" id="ctxMenu">
+        <div class="ctx-menu-item" onclick="ctxCountRows()">Count Rows</div>
+        <div class="ctx-menu-sep"></div>
+        ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<div class="ctx-menu-item" onclick="ctxCopyHeaders()">Copy Selected Column Headers</div>'}
+        ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<div class="ctx-menu-item" onclick="triggerExport()">Export</div>'}
+        ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<div class="ctx-menu-item" onclick="ctxCopyCell()">Copy</div>'}
+    </div>
+    <!-- Count Rows Modal -->
+    <div class="modal-overlay" id="countModal">
+        <div class="modal-box">
+            <h3>Row Count</h3>
+            <div class="modal-count" id="countModalValue">0 Rows</div>
+            <div class="modal-actions">
+                <button class="secondary" onclick="ctxCopyCount()">Copy</button>
+                <button onclick="closeCountModal()">Ok</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Status Bar -->
     <div class="status-bar">
@@ -784,6 +888,7 @@ class ObjectViewerPanel {
             else if (msg.type === 'renderData') {
                 loadedTabs.add('data');
                 dataColumns = msg.columns;
+                dataColumns._statement = msg.statement || null;
                 dataRows = msg.rows;
                 dataFilteredRows = [...dataRows];
                 
@@ -852,6 +957,13 @@ class ObjectViewerPanel {
                 }
                 updateStatus('Additional rows loaded');
             }
+            else if (msg.type === 'countRowsResult') {
+                if (msg.count >= 0) {
+                    document.getElementById('countModalValue').textContent = msg.count.toLocaleString() + ' Rows';
+                } else {
+                    document.getElementById('countModalValue').textContent = 'Error: ' + (msg.error || 'Unknown');
+                }
+            }
         });
 
         // --- Data Grid Methods ---
@@ -900,18 +1012,96 @@ class ObjectViewerPanel {
         function sortDataBy(idx) {
             if (sortColIdx === idx) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
             else { sortColIdx = idx; sortDir = 'asc'; }
+            const DATE_TYPES = ['DATE','TIMESTAMP','TIMESTAMP WITH TIME ZONE','TIMESTAMP WITH LOCAL TIME ZONE'];
+            const isDate = DATE_TYPES.includes(dataColumns[idx]?.dbType);
             
             dataFilteredRows.sort((a, b) => {
                 const va = a[idx], vb = b[idx];
                 if (va === null && vb === null) return 0;
                 if (va === null) return 1; if (vb === null) return -1;
                 if (typeof va === 'number' && typeof vb === 'number') return sortDir === 'asc' ? va - vb : vb - va;
+                if (isDate) {
+                    const da = new Date(String(va)).getTime(), db = new Date(String(vb)).getTime();
+                    if (!isNaN(da) && !isNaN(db)) return sortDir === 'asc' ? da - db : db - da;
+                }
                 return sortDir === 'asc' ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
             });
             renderDataTable();
         }
 
         window.sortDataBy = sortDataBy; // Export to global for inline onclick
+
+        // ── Context Menu ──
+        let ctxTargetCell = null;
+        function showCtxMenu(e) {
+            if (${buildConfig_1.BUILD_CONFIG.isRestricted}) return;
+            e.preventDefault();
+            const menu = document.getElementById('ctxMenu');
+            menu.style.left = e.clientX + 'px';
+            menu.style.top = e.clientY + 'px';
+            menu.classList.add('show');
+            ctxTargetCell = e.target.closest('td');
+        }
+        function hideCtxMenu() { document.getElementById('ctxMenu').classList.remove('show'); }
+        document.addEventListener('click', hideCtxMenu);
+        document.addEventListener('contextmenu', (e) => { if (e.target.closest('.data-grid-container')) showCtxMenu(e); });
+
+        function ctxCountRows() {
+            hideCtxMenu();
+            document.getElementById('countModalValue').textContent = 'Counting...';
+            document.getElementById('countModal').classList.add('show');
+            // Send the statement if available (query result mode)
+            const stmt = dataColumns._statement || null;
+            vscode.postMessage({ type: 'countRows', statement: stmt });
+        }
+        function closeCountModal() { document.getElementById('countModal').classList.remove('show'); }
+        function ctxCopyCount() {
+            const text = document.getElementById('countModalValue').textContent;
+            vscode.postMessage({ type: 'copyCell', value: text });
+            closeCountModal();
+        }
+        function ctxCopyHeaders() {
+            hideCtxMenu();
+            const headers = dataColumns.map(c => c.name).join('\t');
+            vscode.postMessage({ type: 'copyCell', value: headers });
+        }
+        function ctxCopyCell() {
+            hideCtxMenu();
+            if (ctxTargetCell) vscode.postMessage({ type: 'copyCell', value: ctxTargetCell.textContent || '' });
+        }
+        window.ctxCountRows = ctxCountRows;
+        window.closeCountModal = closeCountModal;
+        window.ctxCopyCount = ctxCopyCount;
+        window.ctxCopyHeaders = ctxCopyHeaders;
+        window.ctxCopyCell = ctxCopyCell;
+
+        // ── Column Resize Logic ──
+        let resizeCol = null, resizeStartX = 0, resizeStartW = 0;
+        function initColResize(e) {
+            e.stopPropagation(); e.preventDefault();
+            const th = e.target.parentElement;
+            resizeCol = th;
+            resizeStartX = e.clientX;
+            resizeStartW = th.offsetWidth;
+            e.target.classList.add('active');
+            document.addEventListener('mousemove', doColResize);
+            document.addEventListener('mouseup', stopColResize);
+        }
+        function doColResize(e) {
+            if (!resizeCol) return;
+            const diff = e.clientX - resizeStartX;
+            const newW = Math.max(40, resizeStartW + diff);
+            resizeCol.style.width = newW + 'px';
+            resizeCol.style.minWidth = newW + 'px';
+            resizeCol.style.maxWidth = newW + 'px';
+        }
+        function stopColResize() {
+            document.querySelectorAll('.col-resizer.active').forEach(r => r.classList.remove('active'));
+            resizeCol = null;
+            document.removeEventListener('mousemove', doColResize);
+            document.removeEventListener('mouseup', stopColResize);
+        }
+        window.initColResize = initColResize;
 
         function renderDataTable() {
             const thead = document.getElementById('dataTableHead');
@@ -922,7 +1112,7 @@ class ObjectViewerPanel {
             // Header
             thead.innerHTML = '<tr><th class="row-number">#</th>' + dataColumns.map((col, i) => {
                 const s = sortColIdx === i ? (sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
-                return '<th class="' + s + '" onclick="sortDataBy(' + i + ')" title="' + col.name + ' (' + col.dbType + ')">' + col.name + '</th>';
+                return '<th class="' + s + '" onclick="sortDataBy(' + i + ')" title="' + col.name + ' (' + col.dbType + ')">' + col.name + '<div class="col-resizer" onmousedown="initColResize(event)"></div></th>';
             }).join('') + '</tr>';
 
             // Body

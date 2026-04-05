@@ -128,8 +128,13 @@ class SqlWorksheetCommands {
                 vscode.window.showInformationMessage(`${successCount} statement(s) succeeded, ${errorCount} failed.`);
             }
         }
+        else if (statements.length === 1) {
+            // Single statement — execute the cleaned string from splitStatements
+            // to avoid sending trailing comments hiding semicolons to the DB
+            await this.executeSql(statements[0], docUri, startOffset);
+        }
         else {
-            // Single statement — execute directly
+            // If it's just comments but user selected it, run it (usually will be a no-op or empty query)
             await this.executeSql(sql.trim(), docUri, startOffset);
         }
     }
@@ -454,7 +459,7 @@ class SqlWorksheetCommands {
         }
         // Strip block and line comments to accurately detect queries starting with SELECT/WITH
         const cleanSql = sql.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
-        const isQuery = /^\s*(SELECT|WITH)\s/i.test(cleanSql);
+        const isQuery = /^\s*(\(|SELECT|WITH)\b/i.test(cleanSql);
         this.statusBar.showRunning();
         // Get dedicated session connection for this worksheet
         const editor = vscode.window.activeTextEditor;

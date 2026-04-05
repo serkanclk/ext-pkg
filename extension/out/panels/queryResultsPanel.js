@@ -286,6 +286,26 @@ class QueryResultsPanel {
                 }
                 break;
             }
+            case 'countRows': {
+                if (!ws)
+                    break;
+                const ti = message.tabIndex ?? 0;
+                const res = ws.results[ti];
+                if (!res?.statement)
+                    break;
+                try {
+                    const oracleService = oracleService_1.OracleService.getInstance();
+                    const countSql = `SELECT COUNT(*) AS CNT FROM (${res.statement.replace(/;\s*$/, '')})`;
+                    const countResult = await oracleService.executeQuery(countSql, {}, { maxRows: 1 });
+                    const count = countResult.rows?.[0]?.[0] ?? 0;
+                    this.view?.webview.postMessage({ type: 'countRowsResult', count: Number(count), tabIndex: ti });
+                }
+                catch (err) {
+                    vscode.window.showErrorMessage(`Count Rows Error: ${err.message}`);
+                    this.view?.webview.postMessage({ type: 'countRowsResult', count: -1, error: err.message, tabIndex: ti });
+                }
+                break;
+            }
             case 'copyCell':
                 if (!buildConfig_1.BUILD_CONFIG.isRestricted) {
                     vscode.env.clipboard.writeText(message.value);
@@ -453,6 +473,60 @@ class QueryResultsPanel {
         th.sort-asc::after { content: ' ▲'; opacity: 0.7; }
         th.sort-desc::after { content: ' ▼'; opacity: 0.7; }
 
+        /* ── Column Resize ── */
+        th { position: relative; }
+        th .col-resizer {
+            position: absolute; right: -2px; top: 0; bottom: 0; width: 5px;
+            cursor: col-resize; z-index: 20; background: transparent;
+        }
+        th .col-resizer:hover, th .col-resizer.active { background: var(--accent); }
+
+        /* ── Context Menu ── */
+        .ctx-menu {
+            position: fixed; z-index: 1000; min-width: 180px;
+            background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+            color: var(--vscode-menu-foreground, var(--fg));
+            border: 1px solid var(--vscode-menu-border, var(--border));
+            border-radius: 4px; padding: 4px 0;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3); display: none;
+            font-size: 12px;
+        }
+        .ctx-menu.show { display: block; }
+        .ctx-menu-item {
+            padding: 5px 20px; cursor: pointer; white-space: nowrap;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .ctx-menu-item:hover {
+            background: var(--vscode-menu-selectionBackground, var(--accent));
+            color: var(--vscode-menu-selectionForeground, #fff);
+        }
+        .ctx-menu-sep { height: 1px; margin: 4px 8px; background: var(--border); }
+
+        /* ── Count Rows Modal ── */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); z-index: 2000;
+            display: none; align-items: center; justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-box {
+            background: var(--vscode-editorWidget-background, #252526);
+            border: 1px solid var(--border); border-radius: 6px;
+            padding: 20px 30px; min-width: 220px; text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        .modal-box h3 { margin-bottom: 14px; font-size: 14px; font-weight: 600; }
+        .modal-box .modal-count { font-size: 16px; margin-bottom: 16px; }
+        .modal-box .modal-actions { display: flex; gap: 8px; justify-content: center; }
+        .modal-box button {
+            padding: 5px 16px; border-radius: 3px; border: 1px solid var(--border);
+            cursor: pointer; font-size: 12px;
+            background: var(--vscode-button-background, #0e639c);
+            color: var(--vscode-button-foreground, #fff);
+        }
+        .modal-box button:hover { opacity: 0.9; }
+        .modal-box button.secondary { background: transparent; color: var(--fg); }
+
         /* ── Status ── */
         .status-bar {
             display: flex; align-items: center; gap: 12px; padding: 3px 8px;
@@ -489,6 +563,25 @@ class QueryResultsPanel {
     <div class="grid-container" id="gridContainer">
         <div class="empty-state" id="emptyState">No queries executed yet.<br/>Select a worksheet and execute a query.</div>
         <table style="display:none"><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table>
+    </div>
+    <!-- Context Menu -->
+    <div class="ctx-menu" id="ctxMenu">
+        <div class="ctx-menu-item" onclick="ctxCountRows()">Count Rows</div>
+        <div class="ctx-menu-sep"></div>
+        ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<div class="ctx-menu-item" onclick="ctxCopyHeaders()">Copy Selected Column Headers</div>'}
+        ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<div class="ctx-menu-item" onclick="exportCurrent()">Export</div>'}
+        ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<div class="ctx-menu-item" onclick="ctxCopyCell()">Copy</div>'}
+    </div>
+    <!-- Count Rows Modal -->
+    <div class="modal-overlay" id="countModal">
+        <div class="modal-box">
+            <h3>Row Count</h3>
+            <div class="modal-count" id="countModalValue">0 Rows</div>
+            <div class="modal-actions">
+                <button class="secondary" onclick="ctxCopyCount()">Copy</button>
+                <button onclick="closeCountModal()">Ok</button>
+            </div>
+        </div>
     </div>
     <div class="status-bar">
         <span id="statusRowCount"></span>
@@ -566,6 +659,85 @@ class QueryResultsPanel {
             }).join('');
         }
 
+        // ── Context Menu State ──
+        let ctxTargetCell = null;
+
+        function showContextMenu(e) {
+            if (${buildConfig_1.BUILD_CONFIG.isRestricted}) return;
+            e.preventDefault();
+            const menu = document.getElementById('ctxMenu');
+            menu.style.left = e.clientX + 'px';
+            menu.style.top = e.clientY + 'px';
+            menu.classList.add('show');
+            ctxTargetCell = e.target.closest('td');
+        }
+        function hideContextMenu() {
+            document.getElementById('ctxMenu').classList.remove('show');
+        }
+        document.addEventListener('click', hideContextMenu);
+        document.addEventListener('contextmenu', (e) => { if (e.target.closest('.grid-container')) showContextMenu(e); });
+
+        function ctxCountRows() {
+            hideContextMenu();
+            if (selectedTabIndex < 0 || !activeTabs[selectedTabIndex]) return;
+            document.getElementById('countModalValue').textContent = 'Counting...';
+            document.getElementById('countModal').classList.add('show');
+            postMsg({type:'countRows', tabIndex: selectedTabIndex});
+        }
+        function closeCountModal() { document.getElementById('countModal').classList.remove('show'); }
+        function ctxCopyCount() {
+            const text = document.getElementById('countModalValue').textContent;
+            postMsg({type:'copyCell',value:text});
+            closeCountModal();
+        }
+        function ctxCopyHeaders() {
+            hideContextMenu();
+            if (selectedTabIndex < 0 || !activeTabs[selectedTabIndex]) return;
+            const headers = activeTabs[selectedTabIndex].columns.map(c => c.name).join('\t');
+            postMsg({type:'copyCell',value:headers});
+        }
+        function ctxCopyCell() {
+            hideContextMenu();
+            if (ctxTargetCell) {
+                postMsg({type:'copyCell',value:ctxTargetCell.textContent || ''});
+            }
+        }
+
+        // ── Column Resize Logic ──
+        let resizeCol = null, resizeStartX = 0, resizeStartW = 0;
+        function initColResize(e, colIdx) {
+            e.stopPropagation(); e.preventDefault();
+            const th = e.target.parentElement;
+            resizeCol = th;
+            resizeStartX = e.clientX;
+            resizeStartW = th.offsetWidth;
+            e.target.classList.add('active');
+            document.addEventListener('mousemove', doColResize);
+            document.addEventListener('mouseup', stopColResize);
+        }
+        function doColResize(e) {
+            if (!resizeCol) return;
+            const diff = e.clientX - resizeStartX;
+            const newW = Math.max(40, resizeStartW + diff);
+            resizeCol.style.width = newW + 'px';
+            resizeCol.style.minWidth = newW + 'px';
+            resizeCol.style.maxWidth = newW + 'px';
+        }
+        function stopColResize(e) {
+            document.querySelectorAll('.col-resizer.active').forEach(r => r.classList.remove('active'));
+            resizeCol = null;
+            document.removeEventListener('mousemove', doColResize);
+            document.removeEventListener('mouseup', stopColResize);
+        }
+
+        // ── Date sort helper ──
+        const DATE_TYPES = ['DATE','TIMESTAMP','TIMESTAMP WITH TIME ZONE','TIMESTAMP WITH LOCAL TIME ZONE'];
+        function parseDateVal(v) {
+            if (v === null || v === undefined) return null;
+            const d = new Date(String(v));
+            return isNaN(d.getTime()) ? null : d.getTime();
+        }
+
         function renderGrid() {
             if (selectedTabIndex < 0 || !activeTabs[selectedTabIndex]) {
                 document.getElementById('emptyState').style.display = 'flex';
@@ -589,7 +761,7 @@ class QueryResultsPanel {
             thead.innerHTML = '<tr><th class="row-number">#</th>' +
                 t.columns.map((col, i) => {
                     const sc = t.sortColumn===i ? (t.sortDir==='asc'?'sort-asc':'sort-desc') : '';
-                    return '<th class="'+sc+'" onclick="sortBy('+i+')" title="'+col.name+' ('+col.dbType+')">'+col.name+'</th>';
+                    return '<th class="'+sc+'" onclick="sortBy('+i+')" title="'+col.name+' ('+col.dbType+')">'+col.name+'<div class="col-resizer" onmousedown="initColResize(event,'+i+')"></div></th>';
                 }).join('') + '</tr>';
                 
             const numTypes = ['NUMBER','BINARY_FLOAT','BINARY_DOUBLE','FLOAT','INTEGER','INT'];
@@ -638,11 +810,16 @@ class QueryResultsPanel {
             const t = activeTabs[selectedTabIndex];
             if (t.sortColumn===ci) t.sortDir = t.sortDir==='asc'?'desc':'asc';
             else { t.sortColumn=ci; t.sortDir='asc'; }
+            const isDate = DATE_TYPES.includes(t.columns[ci]?.dbType);
             t.filteredRows.sort((a,b) => {
                 const va=a[ci],vb=b[ci];
                 if (va===null&&vb===null) return 0;
                 if (va===null) return 1; if (vb===null) return -1;
                 if (typeof va==='number'&&typeof vb==='number') return t.sortDir==='asc'?va-vb:vb-va;
+                if (isDate) {
+                    const da=parseDateVal(va), db=parseDateVal(vb);
+                    if (da!==null&&db!==null) return t.sortDir==='asc'?da-db:db-da;
+                }
                 return t.sortDir==='asc'?String(va).localeCompare(String(vb)):String(vb).localeCompare(String(va));
             });
             renderGrid();
@@ -689,6 +866,13 @@ class QueryResultsPanel {
                 if (msg.tabIndex===selectedTabIndex) {
                     const lb=document.getElementById('loadMoreBtn');
                     lb.textContent=msg.loading?'Loading...':'↓ Load More'; lb.disabled=msg.loading;
+                }
+            }
+            else if (msg.type==='countRowsResult') {
+                if (msg.count >= 0) {
+                    document.getElementById('countModalValue').textContent = msg.count.toLocaleString() + ' Rows';
+                } else {
+                    document.getElementById('countModalValue').textContent = 'Error: ' + (msg.error || 'Unknown');
                 }
             }
         });

@@ -49,6 +49,7 @@ const sqlCodeLensProvider_1 = require("./providers/sqlCodeLensProvider");
 const dbmsOutputProvider_1 = require("./providers/dbmsOutputProvider");
 const sqlSnippetsProvider_1 = require("./providers/sqlSnippetsProvider");
 const sqlDiagnosticsProvider_1 = require("./providers/sqlDiagnosticsProvider");
+const sqlFoldingProvider_1 = require("./providers/sqlFoldingProvider");
 const sqlWorksheet_1 = require("./commands/sqlWorksheet");
 const queryResultsPanel_1 = require("./panels/queryResultsPanel");
 const objectViewerPanel_1 = require("./panels/objectViewerPanel");
@@ -136,7 +137,7 @@ function activate(context) {
         });
         // ─── Register Language Features ───
         const langSelector = { language: 'oraclesql', scheme: '*' };
-        context.subscriptions.push(vscode.languages.registerCompletionItemProvider(langSelector, sqlLanguageProvider, '.'), vscode.languages.registerHoverProvider(langSelector, sqlLanguageProvider), vscode.languages.registerDocumentFormattingEditProvider(langSelector, sqlLanguageProvider), vscode.window.registerWebviewViewProvider(queryResultsPanel_1.QueryResultsPanel.viewType, queryResultsPanel));
+        context.subscriptions.push(vscode.languages.registerCompletionItemProvider(langSelector, sqlLanguageProvider, '.'), vscode.languages.registerHoverProvider(langSelector, sqlLanguageProvider), vscode.languages.registerDocumentFormattingEditProvider(langSelector, sqlLanguageProvider), vscode.languages.registerFoldingRangeProvider(langSelector, new sqlFoldingProvider_1.SqlFoldingProvider()), vscode.window.registerWebviewViewProvider(queryResultsPanel_1.QueryResultsPanel.viewType, queryResultsPanel));
         // ─── Setup Export Handler (QueryResultsPanel — static) ───
         queryResultsPanel_1.QueryResultsPanel.setExportHandler(async (data) => {
             const activeConn = connMgr.getActiveConnectionName();

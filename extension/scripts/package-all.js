@@ -67,7 +67,7 @@ function runBuild() {
         for (const target of targets) {
             console.log(`\n[*] Target: ${target}`);
             try {
-                const cmd = `yes y | npx @vscode/vsce package --target ${target} --allow-star-activation`;
+                const cmd = `(yes y | npx @vscode/vsce package --target ${target} --allow-star-activation) || true`;
                 execSync(cmd, { stdio: 'inherit' });
 
                 // Move the generated VSIX to the correct releases folder
