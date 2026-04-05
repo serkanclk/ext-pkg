@@ -704,28 +704,34 @@ class QueryResultsPanel {
         }
 
         // ── Column Resize Logic ──
-        let resizeCol = null, resizeStartX = 0, resizeStartW = 0;
+        let resizeCol = null, resizeStartX = 0, resizeStartW = 0, resizeColIdx = -1;
         function initColResize(e, colIdx) {
             e.stopPropagation(); e.preventDefault();
             const th = e.target.parentElement;
             resizeCol = th;
             resizeStartX = e.clientX;
             resizeStartW = th.offsetWidth;
+            resizeColIdx = colIdx;
             e.target.classList.add('active');
             document.addEventListener('mousemove', doColResize);
             document.addEventListener('mouseup', stopColResize);
         }
         function doColResize(e) {
-            if (!resizeCol) return;
+            if (!resizeCol || selectedTabIndex < 0 || resizeColIdx < 0) return;
+            // When moving mouse slightly right, prevent weird collapse by always overriding style
             const diff = e.clientX - resizeStartX;
             const newW = Math.max(40, resizeStartW + diff);
             resizeCol.style.width = newW + 'px';
             resizeCol.style.minWidth = newW + 'px';
             resizeCol.style.maxWidth = newW + 'px';
+            
+            // Persist width into the query context so it survives sorts but resets on new query
+            activeTabs[selectedTabIndex].columns[resizeColIdx].width = newW;
         }
         function stopColResize(e) {
             document.querySelectorAll('.col-resizer.active').forEach(r => r.classList.remove('active'));
             resizeCol = null;
+            resizeColIdx = -1;
             document.removeEventListener('mousemove', doColResize);
             document.removeEventListener('mouseup', stopColResize);
         }
@@ -755,14 +761,32 @@ class QueryResultsPanel {
             
             // Sorting state defaults
             if (t.sortColumn === undefined) { t.sortColumn = -1; t.sortDir = 'asc'; }
+            
+            // Apply sorting logic on the filtered dataset
+            if (t.sortColumn >= 0) {
+                const ci = t.sortColumn;
+                const isDate = DATE_TYPES.includes(t.columns[ci]?.dbType);
+                t.filteredRows.sort((a,b) => {
+                    const va=a[ci],vb=b[ci];
+                    if (va===null&&vb===null) return 0;
+                    if (va===null) return 1; if (vb===null) return -1;
+                    if (typeof va==='number'&&typeof vb==='number') return t.sortDir==='asc'?va-vb:vb-va;
+                    if (isDate) {
+                        const da=parseDateVal(va), db=parseDateVal(vb);
+                        if (da!==null&&db!==null) return t.sortDir==='asc'?da-db:db-da;
+                    }
+                    return t.sortDir==='asc'?String(va).localeCompare(String(vb)):String(vb).localeCompare(String(va));
+                });
+            }
 
-            const thead = document.getElementById('tableHead');
-            const tbody = document.getElementById('tableBody');
-            thead.innerHTML = '<tr><th class="row-number">#</th>' +
-                t.columns.map((col, i) => {
-                    const sc = t.sortColumn===i ? (t.sortDir==='asc'?'sort-asc':'sort-desc') : '';
-                    return '<th class="'+sc+'" onclick="sortBy('+i+')" title="'+col.name+' ('+col.dbType+')">'+col.name+'<div class="col-resizer" onmousedown="initColResize(event,'+i+')"></div></th>';
-                }).join('') + '</tr>';
+        const thead = document.getElementById('tableHead');
+        const tbody = document.getElementById('tableBody');
+        thead.innerHTML = '<tr><th class="row-number">#</th>' +
+            t.columns.map((col, i) => {
+                const sc = t.sortColumn===i ? (t.sortDir==='asc'?'sort-asc':'sort-desc') : '';
+                const styleStr = col.width ? (' style="width:'+col.width+'px;min-width:'+col.width+'px;max-width:'+col.width+'px"') : '';
+                return '<th class="'+sc+'" onclick="sortBy('+i+')" title="'+col.name+' ('+col.dbType+')"'+styleStr+'>'+col.name+'<div class="col-resizer" onmousedown="initColResize(event,'+i+')"></div></th>';
+            }).join('') + '</tr>';
                 
             const numTypes = ['NUMBER','BINARY_FLOAT','BINARY_DOUBLE','FLOAT','INTEGER','INT'];
             const frag = document.createDocumentFragment();
@@ -806,22 +830,10 @@ class QueryResultsPanel {
         }
 
         function sortBy(ci) {
-            if (selectedTabIndex<0) return;
+            if (selectedTabIndex < 0) return;
             const t = activeTabs[selectedTabIndex];
-            if (t.sortColumn===ci) t.sortDir = t.sortDir==='asc'?'desc':'asc';
-            else { t.sortColumn=ci; t.sortDir='asc'; }
-            const isDate = DATE_TYPES.includes(t.columns[ci]?.dbType);
-            t.filteredRows.sort((a,b) => {
-                const va=a[ci],vb=b[ci];
-                if (va===null&&vb===null) return 0;
-                if (va===null) return 1; if (vb===null) return -1;
-                if (typeof va==='number'&&typeof vb==='number') return t.sortDir==='asc'?va-vb:vb-va;
-                if (isDate) {
-                    const da=parseDateVal(va), db=parseDateVal(vb);
-                    if (da!==null&&db!==null) return t.sortDir==='asc'?da-db:db-da;
-                }
-                return t.sortDir==='asc'?String(va).localeCompare(String(vb)):String(vb).localeCompare(String(va));
-            });
+            if (t.sortColumn === ci) t.sortDir = t.sortDir === 'asc' ? 'desc' : 'asc';
+            else { t.sortColumn = ci; t.sortDir = 'asc'; }
             renderGrid();
         }
 

@@ -1002,31 +1002,34 @@ class ObjectViewerPanel {
 
         function applyDataFilter() {
             const term = document.getElementById('dataFilterInput').value.toLowerCase();
-            if (!term) { dataFilteredRows = dataRows; }
+            if (!term) { dataFilteredRows = [...dataRows]; }
             else {
                 dataFilteredRows = dataRows.filter(r => r.some(c => String(c ?? '').toLowerCase().includes(term)));
             }
+
+            if (sortColIdx >= 0) {
+                const DATE_TYPES = ['DATE','TIMESTAMP','TIMESTAMP WITH TIME ZONE','TIMESTAMP WITH LOCAL TIME ZONE'];
+                const isDate = DATE_TYPES.includes(dataColumns[sortColIdx]?.dbType);
+                dataFilteredRows.sort((a, b) => {
+                    const va = a[sortColIdx], vb = b[sortColIdx];
+                    if (va === null && vb === null) return 0;
+                    if (va === null) return 1; if (vb === null) return -1;
+                    if (typeof va === 'number' && typeof vb === 'number') return sortDir === 'asc' ? va - vb : vb - va;
+                    if (isDate) {
+                        const da = new Date(String(va)).getTime(), db = new Date(String(vb)).getTime();
+                        if (!isNaN(da) && !isNaN(db)) return sortDir === 'asc' ? da - db : db - da;
+                    }
+                    return sortDir === 'asc' ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+                });
+            }
+
             renderDataTable();
         }
 
         function sortDataBy(idx) {
             if (sortColIdx === idx) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
             else { sortColIdx = idx; sortDir = 'asc'; }
-            const DATE_TYPES = ['DATE','TIMESTAMP','TIMESTAMP WITH TIME ZONE','TIMESTAMP WITH LOCAL TIME ZONE'];
-            const isDate = DATE_TYPES.includes(dataColumns[idx]?.dbType);
-            
-            dataFilteredRows.sort((a, b) => {
-                const va = a[idx], vb = b[idx];
-                if (va === null && vb === null) return 0;
-                if (va === null) return 1; if (vb === null) return -1;
-                if (typeof va === 'number' && typeof vb === 'number') return sortDir === 'asc' ? va - vb : vb - va;
-                if (isDate) {
-                    const da = new Date(String(va)).getTime(), db = new Date(String(vb)).getTime();
-                    if (!isNaN(da) && !isNaN(db)) return sortDir === 'asc' ? da - db : db - da;
-                }
-                return sortDir === 'asc' ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
-            });
-            renderDataTable();
+            applyDataFilter();
         }
 
         window.sortDataBy = sortDataBy; // Export to global for inline onclick
@@ -1076,28 +1079,32 @@ class ObjectViewerPanel {
         window.ctxCopyCell = ctxCopyCell;
 
         // ── Column Resize Logic ──
-        let resizeCol = null, resizeStartX = 0, resizeStartW = 0;
-        function initColResize(e) {
+        let resizeCol = null, resizeStartX = 0, resizeStartW = 0, resizeColIdx = -1;
+        function initColResize(e, colIdx) {
             e.stopPropagation(); e.preventDefault();
             const th = e.target.parentElement;
             resizeCol = th;
             resizeStartX = e.clientX;
             resizeStartW = th.offsetWidth;
+            resizeColIdx = colIdx;
             e.target.classList.add('active');
             document.addEventListener('mousemove', doColResize);
             document.addEventListener('mouseup', stopColResize);
         }
         function doColResize(e) {
-            if (!resizeCol) return;
+            if (!resizeCol || resizeColIdx < 0) return;
             const diff = e.clientX - resizeStartX;
             const newW = Math.max(40, resizeStartW + diff);
             resizeCol.style.width = newW + 'px';
             resizeCol.style.minWidth = newW + 'px';
             resizeCol.style.maxWidth = newW + 'px';
+            
+            if (dataColumns[resizeColIdx]) dataColumns[resizeColIdx].width = newW;
         }
         function stopColResize() {
             document.querySelectorAll('.col-resizer.active').forEach(r => r.classList.remove('active'));
             resizeCol = null;
+            resizeColIdx = -1;
             document.removeEventListener('mousemove', doColResize);
             document.removeEventListener('mouseup', stopColResize);
         }
@@ -1112,7 +1119,8 @@ class ObjectViewerPanel {
             // Header
             thead.innerHTML = '<tr><th class="row-number">#</th>' + dataColumns.map((col, i) => {
                 const s = sortColIdx === i ? (sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
-                return '<th class="' + s + '" onclick="sortDataBy(' + i + ')" title="' + col.name + ' (' + col.dbType + ')">' + col.name + '<div class="col-resizer" onmousedown="initColResize(event)"></div></th>';
+                const styleStr = col.width ? (' style="width:'+col.width+'px;min-width:'+col.width+'px;max-width:'+col.width+'px"') : '';
+                return '<th class="' + s + '" onclick="sortDataBy(' + i + ')" title="' + col.name + ' (' + col.dbType + ')"' + styleStr + '>' + col.name + '<div class="col-resizer" onmousedown="initColResize(event,' + i + ')"></div></th>';
             }).join('') + '</tr>';
 
             // Body
