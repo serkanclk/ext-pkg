@@ -527,6 +527,8 @@ class ObjectViewerPanel {
         }
         th .col-label.sort-asc::after { content: ' \u25b2'; opacity: 0.7; }
         th .col-label.sort-desc::after { content: ' \u25bc'; opacity: 0.7; }
+        th.col-header-selected { background: var(--vscode-list-activeSelectionBackground, #0e639c) !important; }
+        th.col-header-selected .col-label { color: var(--vscode-list-activeSelectionForeground, #fff); }
 
         /* ── Column Resize ── */
         th { position: relative; }
@@ -758,6 +760,7 @@ class ObjectViewerPanel {
         <div class="ctx-menu-item" onclick="ctxCountRows()">Count Rows</div>
         <div class="ctx-menu-sep"></div>
         ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<div class="ctx-menu-item" onclick="ctxCopyHeaders()">Copy Selected Column Headers</div>'}
+        ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<div class="ctx-menu-item" onclick="ctxCopyAllHeaders()">Copy All Column Headers</div>'}
         ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<div class="ctx-menu-item" onclick="triggerExport()">Export</div>'}
         ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<div class="ctx-menu-item" onclick="ctxCopyCell()">Copy</div>'}
     </div>
@@ -806,6 +809,7 @@ class ObjectViewerPanel {
         let dataFilteredRows = [];
         let sortColIdx = -1;
         let sortDir = 'asc';
+        let selectedColHeaders = new Set(); // Column indices selected via Ctrl+click for header copy
 
         // Numeric string comparison for NUMBER-as-string sort (arbitrary precision)
         function numericStringCmp(a, b) {
@@ -911,6 +915,7 @@ class ObjectViewerPanel {
                 dataColumns._statement = msg.statement || null;
                 dataRows = msg.rows;
                 dataFilteredRows = [...dataRows];
+                selectedColHeaders.clear();
                 
                 updateDataInfo(msg.rowCount, msg.hasMore, msg.executionTime);
                 renderDataTable();
@@ -1058,10 +1063,25 @@ class ObjectViewerPanel {
             applyDataFilter();
         }
 
-        window.sortDataBy = sortDataBy; // Export to global for inline onclick
+        window.sortDataBy = sortDataBy;
+
+        function toggleColHeaderSelection(colIdx, ctrlKey) {
+            if (!ctrlKey) {
+                selectedColHeaders.clear();
+                selectedColHeaders.add(colIdx);
+            } else {
+                if (selectedColHeaders.has(colIdx)) selectedColHeaders.delete(colIdx);
+                else selectedColHeaders.add(colIdx);
+            }
+            document.querySelectorAll('th.col-header-selected').forEach(el => el.classList.remove('col-header-selected'));
+            const ths = document.querySelectorAll('#dataTableHead th');
+            selectedColHeaders.forEach(idx => { if (ths[idx + 1]) ths[idx + 1].classList.add('col-header-selected'); });
+        }
+        window.toggleColHeaderSelection = toggleColHeaderSelection;
 
         // ── Context Menu ──
         let ctxTargetCell = null;
+        let ctxRightClickColIdx = -1;
         function showCtxMenu(e) {
             if (${buildConfig_1.BUILD_CONFIG.isRestricted}) return;
             e.preventDefault();
@@ -1070,6 +1090,8 @@ class ObjectViewerPanel {
             menu.style.top = e.clientY + 'px';
             menu.classList.add('show');
             ctxTargetCell = e.target.closest('td');
+            const th = e.target.closest('th');
+            ctxRightClickColIdx = th ? th.cellIndex - 1 : -1;
         }
         function hideCtxMenu() { document.getElementById('ctxMenu').classList.remove('show'); }
         document.addEventListener('click', hideCtxMenu);
@@ -1091,8 +1113,20 @@ class ObjectViewerPanel {
         }
         function ctxCopyHeaders() {
             hideCtxMenu();
-            const headers = dataColumns.map(c => c.name).join('\t');
-            vscode.postMessage({ type: 'copyCell', value: headers });
+            if (selectedColHeaders.size > 0) {
+                const ordered = dataColumns
+                    .map((c, i) => selectedColHeaders.has(i) ? c.name : null)
+                    .filter(n => n !== null);
+                vscode.postMessage({ type: 'copyCell', value: ordered.join(',') });
+            } else if (ctxRightClickColIdx >= 0 && ctxRightClickColIdx < dataColumns.length) {
+                vscode.postMessage({ type: 'copyCell', value: dataColumns[ctxRightClickColIdx].name });
+            } else {
+                vscode.postMessage({ type: 'copyCell', value: dataColumns.map(c => c.name).join(',') });
+            }
+        }
+        function ctxCopyAllHeaders() {
+            hideCtxMenu();
+            vscode.postMessage({ type: 'copyCell', value: dataColumns.map(c => c.name).join(',') });
         }
         function ctxCopyCell() {
             hideCtxMenu();
@@ -1102,6 +1136,7 @@ class ObjectViewerPanel {
         window.closeCountModal = closeCountModal;
         window.ctxCopyCount = ctxCopyCount;
         window.ctxCopyHeaders = ctxCopyHeaders;
+        window.ctxCopyAllHeaders = ctxCopyAllHeaders;
         window.ctxCopyCell = ctxCopyCell;
 
         // ── Column Resize Logic ──
@@ -1128,16 +1163,11 @@ class ObjectViewerPanel {
             if (dataColumns[resizeColIdx]) dataColumns[resizeColIdx].width = newW;
         }
         function stopColResize() {
-            const wasResizing = resizeCol !== null;
             document.querySelectorAll('.col-resizer.active').forEach(r => r.classList.remove('active'));
             resizeCol = null;
             resizeColIdx = -1;
             document.removeEventListener('mousemove', doColResize);
             document.removeEventListener('mouseup', stopColResize);
-            if (wasResizing) {
-                // Consume the click event that fires after mouseup to prevent unintended sort
-                document.addEventListener('click', ev => ev.stopImmediatePropagation(), { capture: true, once: true });
-            }
         }
         window.initColResize = initColResize;
 
@@ -1151,7 +1181,8 @@ class ObjectViewerPanel {
             thead.innerHTML = '<tr><th class="row-number">#</th>' + dataColumns.map((col, i) => {
                 const s = sortColIdx === i ? (sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
                 const styleStr = col.width ? (' style="width:'+col.width+'px;min-width:'+col.width+'px;max-width:'+col.width+'px"') : '';
-                return '<th title="' + col.name + ' (' + col.dbType + ')"' + styleStr + '><span class="col-label ' + s + '" onclick="sortDataBy(' + i + ')">' + col.name + '</span><div class="col-resizer" onmousedown="initColResize(event,' + i + ')"></div></th>';
+                const selClass = selectedColHeaders.has(i) ? ' col-header-selected' : '';
+                return '<th title="' + col.name + ' (' + col.dbType + ')" class="' + selClass.trim() + '"' + styleStr + ' onclick="toggleColHeaderSelection(' + i + ',event.ctrlKey||event.metaKey)" ondblclick="sortDataBy(' + i + ')"><span class="col-label ' + s + '">' + col.name + '</span><div class="col-resizer" onmousedown="initColResize(event,' + i + ')" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()"></div></th>';
             }).join('') + '</tr>';
 
             // Body

@@ -616,6 +616,7 @@ class QueryResultsPanel {
         <div class="ctx-menu-item" onclick="ctxCountRows()">Count Rows</div>
         <div class="ctx-menu-sep"></div>
         ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<div class="ctx-menu-item" onclick="ctxCopyHeaders()">Copy Selected Column Headers</div>'}
+        ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<div class="ctx-menu-item" onclick="ctxCopyAllHeaders()">Copy All Column Headers</div>'}
         ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<div class="ctx-menu-item" onclick="exportCurrent()">Export</div>'}
         ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<div class="ctx-menu-item" onclick="ctxCopyCell()">Copy</div>'}
     </div>
@@ -798,6 +799,11 @@ class QueryResultsPanel {
                 postMsg({type:'copyCell', value: t.columns.map(c => c.name).join(',')});
             }
         }
+        function ctxCopyAllHeaders() {
+            hideContextMenu();
+            if (selectedTabIndex < 0 || !activeTabs[selectedTabIndex]) return;
+            postMsg({type:'copyCell', value: activeTabs[selectedTabIndex].columns.map(c => c.name).join(',')});
+        }
         function ctxCopyCell() {
             hideContextMenu();
             if (ctxTargetCell) {
@@ -919,7 +925,7 @@ class QueryResultsPanel {
                 const sc = t.sortColumn===i ? (t.sortDir==='asc'?'sort-asc':'sort-desc') : '';
                 const styleStr = col.width ? (' style="width:'+col.width+'px;min-width:'+col.width+'px;max-width:'+col.width+'px"') : '';
                 const selClass = selectedColHeaders.has(i) ? ' col-header-selected' : '';
-                return '<th title="'+col.name+' ('+col.dbType+')" class="'+selClass.trim()+'"'+styleStr+'><span class="col-label '+sc+'" onclick="toggleColHeaderSelection('+i+',event.ctrlKey||event.metaKey)" ondblclick="sortBy('+i+')">'+col.name+'</span><div class="col-resizer" onmousedown="initColResize(event,'+i+')"></div></th>';
+                return '<th title="'+col.name+' ('+col.dbType+')" class="'+selClass.trim()+'"'+styleStr+' onclick="toggleColHeaderSelection('+i+',event.ctrlKey||event.metaKey)" ondblclick="sortBy('+i+')"><span class="col-label '+sc+'">'+col.name+'</span><div class="col-resizer" onmousedown="initColResize(event,'+i+')" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()"></div></th>';
             }).join('') + '</tr>';
                 
             const numTypes = ['NUMBER','BINARY_FLOAT','BINARY_DOUBLE','FLOAT','INTEGER','INT'];
