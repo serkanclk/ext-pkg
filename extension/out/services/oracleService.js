@@ -59,6 +59,13 @@ try {
         if (dateTypes.has(metaData.dbType)) {
             return { type: oracledb_1.default.STRING };
         }
+        // NUMBER → STRING: Oracle NUMBER has up to 38 significant digits. JavaScript's IEEE 754
+        // double only has ~15-16 significant digits, so values with more digits are silently
+        // corrupted when stored as JS Number. Fetching as STRING preserves the exact Oracle
+        // representation. Column metadata (dbType) still reports NUMBER so sorting/alignment works.
+        if (metaData.dbType === oracledb_1.default.DB_TYPE_NUMBER) {
+            return { type: oracledb_1.default.STRING };
+        }
         // XMLType: do NOT specify { type } — both oracledb.STRING (VARCHAR) and oracledb.CLOB
         // trigger NJS-119: "conversion from DB_TYPE_XMLTYPE to ... not supported".
         // Instead, use a converter-only return: no type conversion is requested, OCI fetches

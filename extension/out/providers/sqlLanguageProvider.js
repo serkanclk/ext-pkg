@@ -70,6 +70,8 @@ const ORACLE_KEYWORDS = [
     // DML
     'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'COMMIT', 'ROLLBACK', 'SAVEPOINT',
     'GRANT', 'REVOKE', 'EXPLAIN', 'PLAN', 'ANALYZE', 'DESCRIBE',
+    // SQL*Plus client commands
+    'DEFINE', 'UNDEFINE',
     // PL/SQL
     'DECLARE', 'BEGIN', 'END', 'EXCEPTION', 'RAISE', 'IF', 'THEN', 'ELSIF',
     'LOOP', 'WHILE', 'EXIT', 'CONTINUE', 'RETURN', 'OPEN', 'CLOSE', 'FETCH',
@@ -206,20 +208,37 @@ class SqlLanguageProvider {
         return items;
     }
     getKeywordCompletions() {
-        return ORACLE_KEYWORDS.map(kw => {
-            const item = new vscode.CompletionItem(kw, vscode.CompletionItemKind.Keyword);
-            item.detail = 'Oracle SQL Keyword';
-            item.insertText = kw;
-            return item;
-        });
+        const items = [];
+        for (const kw of ORACLE_KEYWORDS) {
+            // Uppercase variant
+            const upper = new vscode.CompletionItem(kw, vscode.CompletionItemKind.Keyword);
+            upper.detail = 'Oracle SQL Keyword';
+            upper.insertText = kw;
+            items.push(upper);
+            // Lowercase variant
+            const lower = new vscode.CompletionItem(kw.toLowerCase(), vscode.CompletionItemKind.Keyword);
+            lower.detail = 'Oracle SQL Keyword';
+            lower.insertText = kw.toLowerCase();
+            items.push(lower);
+        }
+        return items;
     }
     getFunctionCompletions() {
-        return ORACLE_FUNCTIONS.map(fn => {
-            const item = new vscode.CompletionItem(fn, vscode.CompletionItemKind.Function);
-            item.detail = 'Oracle Function';
-            item.insertText = new vscode.SnippetString(`${fn}($1)`);
-            return item;
-        });
+        const items = [];
+        for (const fn of ORACLE_FUNCTIONS) {
+            // Uppercase variant
+            const upper = new vscode.CompletionItem(fn, vscode.CompletionItemKind.Function);
+            upper.detail = 'Oracle Function';
+            upper.insertText = new vscode.SnippetString(`${fn}($1)`);
+            items.push(upper);
+            // Lowercase variant
+            const fnLower = fn.toLowerCase();
+            const lower = new vscode.CompletionItem(fnLower, vscode.CompletionItemKind.Function);
+            lower.detail = 'Oracle Function';
+            lower.insertText = new vscode.SnippetString(`${fnLower}($1)`);
+            items.push(lower);
+        }
+        return items;
     }
     getTableCompletions() {
         const items = [];

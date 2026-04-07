@@ -508,6 +508,8 @@ class QueryResultsPanel {
         }
         th .col-label.sort-asc::after { content: ' \u25b2'; opacity: 0.7; }
         th .col-label.sort-desc::after { content: ' \u25bc'; opacity: 0.7; }
+        th.col-header-selected { background: var(--vscode-list-activeSelectionBackground, #0e639c) !important; }
+        th.col-header-selected .col-label { color: var(--vscode-list-activeSelectionForeground, #fff); }
 
         /* ── Column Resize ── */
         th { position: relative; }
@@ -655,6 +657,7 @@ class QueryResultsPanel {
         let stateActiveDocUri = null;
         let activeTabs = []; // Query Results for active worksheet
         let selectedTabIndex = -1; // Which query tab is selected
+        let selectedColHeaders = new Set(); // Column indices selected via Ctrl+click for header copy
 
         if (${buildConfig_1.BUILD_CONFIG.isRestricted}) {
             document.addEventListener('contextmenu', e => e.preventDefault());
@@ -686,6 +689,7 @@ class QueryResultsPanel {
         function switchTab(idx) { 
             if (idx < 0 || idx >= activeTabs.length) return;
             selectedTabIndex = idx;
+            selectedColHeaders.clear();
             renderTabs(); renderGrid(); updateInfo();
         }
         function togglePin(idx) { postMsg({type:'togglePin',tabIndex:idx}); }
@@ -731,6 +735,7 @@ class QueryResultsPanel {
 
         // ── Context Menu State ──
         let ctxTargetCell = null;
+        let ctxRightClickColIdx = -1;
 
         function showContextMenu(e) {
             if (${buildConfig_1.BUILD_CONFIG.isRestricted}) return;
@@ -740,6 +745,8 @@ class QueryResultsPanel {
             menu.style.top = e.clientY + 'px';
             menu.classList.add('show');
             ctxTargetCell = e.target.closest('td');
+            const th = e.target.closest('th');
+            ctxRightClickColIdx = th ? th.cellIndex - 1 : -1; // -1 for row-number col
         }
         function hideContextMenu() {
             document.getElementById('ctxMenu').classList.remove('show');
@@ -760,11 +767,36 @@ class QueryResultsPanel {
             postMsg({type:'copyCell',value:text});
             closeCountModal();
         }
+        function toggleColHeaderSelection(colIdx, ctrlKey) {
+            if (!ctrlKey) {
+                // Single click without Ctrl: clear all and select only this one
+                selectedColHeaders.clear();
+                selectedColHeaders.add(colIdx);
+            } else {
+                // Ctrl+click: toggle
+                if (selectedColHeaders.has(colIdx)) selectedColHeaders.delete(colIdx);
+                else selectedColHeaders.add(colIdx);
+            }
+            // Update visual state
+            document.querySelectorAll('th.col-header-selected').forEach(el => el.classList.remove('col-header-selected'));
+            const ths = document.querySelectorAll('#tableHead th');
+            selectedColHeaders.forEach(idx => { if (ths[idx + 1]) ths[idx + 1].classList.add('col-header-selected'); });
+        }
         function ctxCopyHeaders() {
             hideContextMenu();
             if (selectedTabIndex < 0 || !activeTabs[selectedTabIndex]) return;
-            const headers = activeTabs[selectedTabIndex].columns.map(c => c.name).join('\t');
-            postMsg({type:'copyCell',value:headers});
+            const t = activeTabs[selectedTabIndex];
+            // Priority: multi-select set > right-clicked column > all columns
+            if (selectedColHeaders.size > 0) {
+                const ordered = t.columns
+                    .map((c, i) => selectedColHeaders.has(i) ? c.name : null)
+                    .filter(n => n !== null);
+                postMsg({type:'copyCell', value: ordered.join(',')});
+            } else if (ctxRightClickColIdx >= 0 && ctxRightClickColIdx < t.columns.length) {
+                postMsg({type:'copyCell', value: t.columns[ctxRightClickColIdx].name});
+            } else {
+                postMsg({type:'copyCell', value: t.columns.map(c => c.name).join(',')});
+            }
         }
         function ctxCopyCell() {
             hideContextMenu();
@@ -805,18 +837,38 @@ class QueryResultsPanel {
             resizeColIdx = -1;
             document.removeEventListener('mousemove', doColResize);
             document.removeEventListener('mouseup', stopColResize);
-            if (wasResizing) {
-                // Consume the click event that fires after mouseup to prevent unintended sort
-                document.addEventListener('click', ev => ev.stopImmediatePropagation(), { capture: true, once: true });
-            }
         }
 
         // ── Date sort helper ──
         const DATE_TYPES = ['DATE','TIMESTAMP','TIMESTAMP WITH TIME ZONE','TIMESTAMP WITH LOCAL TIME ZONE'];
         function parseDateVal(v) {
             if (v === null || v === undefined) return null;
-            const d = new Date(String(v));
+            const s = String(v);
+            // Detect DD/MM/YYYY, DD.MM.YYYY, DD-MM-YYYY — JS new Date() would misparse as MM/DD
+            const m = s.match(/^(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](\d{4})/);
+            if (m) {
+                const d = new Date(+m[3], +m[2] - 1, +m[1]);
+                return isNaN(d.getTime()) ? null : d.getTime();
+            }
+            const d = new Date(s);
             return isNaN(d.getTime()) ? null : d.getTime();
+        }
+
+        // ── Numeric string comparison (arbitrary precision, for NUMBER-as-string sort) ──
+        function numericStringCmp(a, b) {
+            const na = a[0] === '-', nb = b[0] === '-';
+            if (na !== nb) return na ? -1 : 1;
+            const aa = na ? a.slice(1) : a, bb = nb ? b.slice(1) : b;
+            // Integer path: compare by length then lexicographically for correct numeric order
+            if (aa.indexOf('.') === -1 && bb.indexOf('.') === -1) {
+                const ld = aa.length - bb.length;
+                if (ld !== 0) return na ? -ld : ld;
+                const lx = aa > bb ? 1 : aa < bb ? -1 : 0;
+                return na ? -lx : lx;
+            }
+            // Decimal path: parseFloat is sufficient for sort ordering
+            const fn = parseFloat(a), fb = parseFloat(b);
+            return isNaN(fn) || isNaN(fb) ? a.localeCompare(b) : fn - fb;
         }
 
         function renderGrid() {
@@ -846,6 +898,12 @@ class QueryResultsPanel {
                     if (va===null&&vb===null) return 0;
                     if (va===null) return 1; if (vb===null) return -1;
                     if (typeof va==='number'&&typeof vb==='number') return t.sortDir==='asc'?va-vb:vb-va;
+                    // NUMBER columns are fetched as strings for full Oracle precision
+                    const isNum = ['NUMBER','BINARY_FLOAT','BINARY_DOUBLE','FLOAT','INTEGER','INT'].includes(t.columns[ci]?.dbType);
+                    if (isNum && typeof va==='string' && typeof vb==='string') {
+                        const cmp = numericStringCmp(va, vb);
+                        return t.sortDir==='asc' ? cmp : -cmp;
+                    }
                     if (isDate) {
                         const da=parseDateVal(va), db=parseDateVal(vb);
                         if (da!==null&&db!==null) return t.sortDir==='asc'?da-db:db-da;
@@ -860,7 +918,8 @@ class QueryResultsPanel {
             t.columns.map((col, i) => {
                 const sc = t.sortColumn===i ? (t.sortDir==='asc'?'sort-asc':'sort-desc') : '';
                 const styleStr = col.width ? (' style="width:'+col.width+'px;min-width:'+col.width+'px;max-width:'+col.width+'px"') : '';
-                return '<th title="'+col.name+' ('+col.dbType+')"'+styleStr+'><span class="col-label '+sc+'" onclick="sortBy('+i+')">'+col.name+'</span><div class="col-resizer" onmousedown="initColResize(event,'+i+')"></div></th>';
+                const selClass = selectedColHeaders.has(i) ? ' col-header-selected' : '';
+                return '<th title="'+col.name+' ('+col.dbType+')" class="'+selClass.trim()+'"'+styleStr+'><span class="col-label '+sc+'" onclick="toggleColHeaderSelection('+i+',event.ctrlKey||event.metaKey)" ondblclick="sortBy('+i+')">'+col.name+'</span><div class="col-resizer" onmousedown="initColResize(event,'+i+')"></div></th>';
             }).join('') + '</tr>';
                 
             const numTypes = ['NUMBER','BINARY_FLOAT','BINARY_DOUBLE','FLOAT','INTEGER','INT'];

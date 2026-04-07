@@ -51,16 +51,24 @@ Denetim sistemi, maksimum güvenlik için koda gömülmüştür. Her veri aktar�
 - **VPN/Uzak bağlantılarda**: İndirme sunucusu dosya boyutuna göre dinamik zaman aşımı kullanır (60s + 50MB başına 60s). Çok büyük dosyalar için dosyayı sunucudan doğrudan kopyalamayı tercih edebilirsiniz.
 - Export işlemi, `oracledb.queryStream()` kullanarak Oracle'dan satır satır veri çeker ve doğrudan diske yazar. RAM'de birikim yapılmaz.
 
-## 📦 Dağıtım Dosyaları (V2.6.10)
+## 📦 Dağıtım Dosyaları (V2.6.11)
 
 | Sürüm | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
-| **Full** | `ing-sql-linux-x64-2.6.10.vsix` | `ing-sql-darwin-arm64-2.6.10.vsix` |
-| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.6.10.vsix` | `ing-sql-intl-darwin-arm64-2.6.10.vsix` |
-| **Restricted** | `ing-sql-restricted-linux-x64-2.6.10.vsix` | `ing-sql-restricted-darwin-arm64-2.6.10.vsix` |
-| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.6.10.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.6.10.vsix` |
+| **Full** | `ing-sql-linux-x64-2.6.11.vsix` | `ing-sql-darwin-arm64-2.6.11.vsix` |
+| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.6.11.vsix` | `ing-sql-intl-darwin-arm64-2.6.11.vsix` |
+| **Restricted** | `ing-sql-restricted-linux-x64-2.6.11.vsix` | `ing-sql-restricted-darwin-arm64-2.6.11.vsix` |
+| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.6.11.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.6.11.vsix` |
 
 ## 📋 Sürüm Notları (Changelog)
+
+### v2.6.11 — Sayısal Hassasiyet, Tarih Sıralama, Başlık Kopyalama, Çift Tıklama & IntelliSense İyileştirmeleri
+- **Oracle NUMBER Hassasiyet Düzeltmesi**: `NUMBER`, `INTEGER`, `FLOAT` kolonlarındaki değerler artık 16. haneden itibaren veri kaybı yaşamadan doğru gösteriliyor. Kök neden: JavaScript'in IEEE 754 `Number` tipi yalnızca ~15-16 basamak hassasiyet sunar; 16+ basamaklı Oracle NUMBER değerleri JS `Number`'a dönüştürüldüğünde sessizce bozuluyordu. Düzeltme: `fetchTypeHandler` artık `DB_TYPE_NUMBER` kolonlarını tam hassasiyetli Oracle string gösterimiyle getiriyor. Sıralama da string karşılaştırması ile tam hassasiyetle yapılıyor.
+- **Tarih Sütunu Sıralama Düzeltmesi**: DD/MM/YYYY, DD.MM.YYYY ve DD-MM-YYYY formatındaki tarih değerleri artık doğru sıralanıyor. Önceki sürümde JavaScript'in `new Date()` fonksiyonu bu formatları MM/DD/YYYY olarak yanlış ayrıştırıyordu. Düzeltme: `parseDateVal` fonksiyonu artık bu formatları algılayarak yıl, ay, gün bileşenlerini doğru sırayla kullanıyor.
+- **Çoklu Sütun Başlığı Seçimi ve Kopyalama**: Sağ tık menüsündeki "Copy Selected Column Headers" artık çoklu seçimi destekliyor. Sütun başlıklarına **tek tıkla** seçim yapılır (mavi vurgu), **Ctrl+tıkla** ile seçime ekle/çıkar. Sağ tık → Copy Selected Column Headers ile seçilen sütunlar virgülle ayrılmış kopyalanır. Hiçbir seçim yoksa tüm sütun adları kopyalanır.
+- **Sütun Sıralama Çift Tıklama ile**: Sütun başlığında sıralama artık tek tık yerine çift tıklama ile başlatılıyor. Bu sayede tek tık faaliyetleri (metin seçimi, sütun seçimi, context menu açma) sort işlemini yanlışlıkla tetiklemiyor.
+- **IntelliSense Küçük/Büyük Harf Desteği**: Tüm Oracle SQL keyword'leri (`SELECT`, `FROM`, `WHERE` vb.) ve fonksiyonlar (`NVL`, `TO_DATE` vb.) artık hem büyük hem küçük harf varyantlarıyla öneri listesinde gösteriliyor.
+- **DEFINE / UNDEFINE IntelliSense**: SQL*Plus istemci komutları `DEFINE` ve `UNDEFINE` artık otomatik tamamlama ve hover dokümantasyonunda tanınıyor.
 
 ### v2.6.10 — CLOB/BLOB Desteği & XMLType CLOB Düzeltmesi
 - **CLOB Görüntüleme (Query Results Paneli)**: `CLOB` ve `NCLOB` sütunların değerleri artık sonuç ızgarasında `[CLOB — X KB]` olarak gösterilir. Hücreye çift tıklandığında tüm metin içeriği açılan bir modal pencerede görüntülenir ve kopyalanabilir.

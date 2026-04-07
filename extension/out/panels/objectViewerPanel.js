@@ -807,6 +807,21 @@ class ObjectViewerPanel {
         let sortColIdx = -1;
         let sortDir = 'asc';
 
+        // Numeric string comparison for NUMBER-as-string sort (arbitrary precision)
+        function numericStringCmp(a, b) {
+            const na = a[0] === '-', nb = b[0] === '-';
+            if (na !== nb) return na ? -1 : 1;
+            const aa = na ? a.slice(1) : a, bb = nb ? b.slice(1) : b;
+            if (aa.indexOf('.') === -1 && bb.indexOf('.') === -1) {
+                const ld = aa.length - bb.length;
+                if (ld !== 0) return na ? -ld : ld;
+                const lx = aa > bb ? 1 : aa < bb ? -1 : 0;
+                return na ? -lx : lx;
+            }
+            const fn = parseFloat(a), fb = parseFloat(b);
+            return isNaN(fn) || isNaN(fb) ? a.localeCompare(b) : fn - fb;
+        }
+
         // --- Core UI Logic ---
 
         function showLoader(show) { 
@@ -1020,6 +1035,12 @@ class ObjectViewerPanel {
                     if (va === null && vb === null) return 0;
                     if (va === null) return 1; if (vb === null) return -1;
                     if (typeof va === 'number' && typeof vb === 'number') return sortDir === 'asc' ? va - vb : vb - va;
+                    // NUMBER columns are fetched as strings for full Oracle precision
+                    const isNum = ['NUMBER','BINARY_FLOAT','BINARY_DOUBLE','FLOAT','INTEGER','INT'].includes(dataColumns[sortColIdx]?.dbType);
+                    if (isNum && typeof va === 'string' && typeof vb === 'string') {
+                        const cmp = numericStringCmp(va, vb);
+                        return sortDir === 'asc' ? cmp : -cmp;
+                    }
                     if (isDate) {
                         const da = new Date(String(va)).getTime(), db = new Date(String(vb)).getTime();
                         if (!isNaN(da) && !isNaN(db)) return sortDir === 'asc' ? da - db : db - da;
