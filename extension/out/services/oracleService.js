@@ -39,6 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.OracleService = void 0;
 const vscode = __importStar(require("vscode"));
 const oracledb_1 = __importDefault(require("oracledb"));
+const stream_1 = require("stream");
 const connectionManager_1 = require("./connectionManager");
 // Force date/timestamp types to be fetched as strings so Oracle applies
 // NLS session formatting (e.g. NLS_DATE_FORMAT set via ALTER SESSION).
@@ -58,17 +59,42 @@ try {
         if (dateTypes.has(metaData.dbType)) {
             return { type: oracledb_1.default.STRING };
         }
+        // XMLType: do NOT specify { type } — both oracledb.STRING (VARCHAR) and oracledb.CLOB
+        // trigger NJS-119: "conversion from DB_TYPE_XMLTYPE to ... not supported".
+        // Instead, use a converter-only return: no type conversion is requested, OCI fetches
+        // the column in its native form. The driver passes the XMLType as a Promise of the
+        // XML string to the converter — we return it as-is so resolveLobs() can await it.
+        //
+        // Limitation: XMLATTRIBUTES(... AS "xmlns:xsi") / XMLNAMESPACES → OCI XmlSave()
+        // resolves the Promise to empty string. No driver-level fix exists; use
+        // XMLSERIALIZE(... AS CLOB) or .getClobVal() in SQL — those return DB_TYPE_CLOB,
+        // skip fetchTypeHandler, and are read fully via getData() in resolveLobs().
+        const xmlTypeId = oracledb_1.default.DB_TYPE_XMLTYPE;
+        if (xmlTypeId !== undefined && metaData.dbType === xmlTypeId) {
+            return {
+                converter: (val) => {
+                    if (val === null || val === undefined) {
+                        return null;
+                    }
+                    if (typeof val === 'string') {
+                        return val;
+                    }
+                    // Return as-is: the driver provides a Promise for the XML string.
+                    // resolveLobs() will await it.
+                    return val;
+                }
+            };
+        }
     };
     console.log(`[ING SQL] fetchTypeHandler configured for ${dateTypes.size} date/timestamp type(s)`);
 }
 catch (err) {
     console.warn('[ING SQL] Could not set fetchTypeHandler:', err.message);
 }
-// Fetch CLOBs as strings and BLOBs as buffers using legacy API (safe on all versions)
-try {
-    oracledb_1.default.fetchAsString = [oracledb_1.default.CLOB];
-}
-catch { /* skip */ }
+// Fetch BLOBs as Buffers. CLOBs and XMLType are intentionally NOT in fetchAsString —
+// the legacy OCI prefetch mechanism returns empty string for XMLType-derived CLOBs with
+// namespace prefix attributes (xmlns:xsi). CLOBs and XMLType Lobs are instead read via
+// Lob.getData() in resolveLobs(), using the OCI CLOB-backed path which handles all variants.
 try {
     oracledb_1.default.fetchAsBuffer = [oracledb_1.default.BLOB];
 }
@@ -222,6 +248,7 @@ class OracleService {
             }
             const rs = result.resultSet;
             const rows = (await rs.getRows(batchSize));
+            await this.resolveLobs(rows);
             const columns = (result.metaData || []).map(m => ({
                 name: m.name,
                 dbType: this.getDbTypeName(m.dbType),
@@ -265,11 +292,80 @@ class OracleService {
             throw new Error('ResultSet cursor not found or expired.');
         }
         const rows = (await cursor.rs.getRows(batchSize));
+        await this.resolveLobs(rows);
         const hasMore = rows.length === batchSize;
         if (!hasMore) {
             await this.closeCursor(cursorId);
         }
         return { rows, hasMore };
+    }
+    /**
+     * Read any oracledb Lob objects remaining in rows after fetch.
+     * XMLType columns arrive here as Lob objects (CLOB-backed) — they are NOT
+     * pre-converted to string because the OCI VARCHAR2 path silently returns empty
+     * for XMLType values with namespace prefix attributes (xmlns:xsi, xsi:*).
+     * getData() reads via the OCILobRead2 CLOB path which handles all XML variants.
+     */
+    async resolveLobs(rows) {
+        const promises = [];
+        for (const row of rows) {
+            for (let i = 0; i < row.length; i++) {
+                const val = row[i];
+                if (val !== null && val !== undefined && typeof val === 'object') {
+                    if (typeof val.then === 'function') {
+                        // Promise: XMLType converter passes the driver's async Promise through.
+                        // Await it to get the XML string (OCI XmlSave result).
+                        const cellIndex = i;
+                        promises.push(Promise.resolve(val)
+                            .then((data) => {
+                            row[cellIndex] = (data === null || data === undefined) ? null
+                                : typeof data === 'string' ? data : String(data);
+                        })
+                            .catch((e) => {
+                            console.error(`[ING SQL] resolveLobs: XMLType Promise failed at col ${cellIndex}:`, e?.message);
+                            row[cellIndex] = '[XMLType error: ' + (e?.message || 'unknown') + ']';
+                        }));
+                    }
+                    else if (typeof val.getData === 'function') {
+                        // Lob object (CLOB, NCLOB): read via getData() (OCILobRead2)
+                        const cellIndex = i;
+                        promises.push(val.getData()
+                            .then((data) => { row[cellIndex] = data; })
+                            .catch((e) => {
+                            console.error(`[ING SQL] resolveLobs: getData() failed at col ${cellIndex}:`, e?.message);
+                            row[cellIndex] = '[LOB read error: ' + (e?.message || 'unknown') + ']';
+                        }));
+                    }
+                    else if (typeof val.pipe === 'function') {
+                        // Readable stream: consume into a string buffer (fallback for stream-mode Lobs)
+                        const cellIndex = i;
+                        promises.push(new Promise((resolve) => {
+                            const chunks = [];
+                            const stream = val;
+                            stream.setEncoding('utf8');
+                            stream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+                            stream.on('end', () => {
+                                row[cellIndex] = Buffer.concat(chunks).toString('utf8');
+                                resolve();
+                            });
+                            stream.on('error', (e) => {
+                                console.error(`[ING SQL] resolveLobs: stream error at col ${cellIndex}:`, e?.message);
+                                row[cellIndex] = '[LOB stream error: ' + (e?.message || 'unknown') + ']';
+                                resolve();
+                            });
+                        }));
+                    }
+                    else {
+                        // Non-Lob, non-stream object that cannot be JSON serialized.
+                        // Last resort: stringify to prevent postMessage structured-clone failure.
+                        row[i] = String(val);
+                    }
+                }
+            }
+        }
+        if (promises.length > 0) {
+            await Promise.all(promises);
+        }
     }
     async closeCursor(cursorId) {
         const cursor = OracleService.activeCursors.get(cursorId);
@@ -326,7 +422,39 @@ class OracleService {
         stream.on('end', cleanup);
         stream.on('error', cleanup);
         stream.on('close', cleanup);
-        return stream;
+        // Wrap queryStream in a Transform that resolves any Lob objects via getData().
+        // This is needed because CLOBs are not in fetchAsString — they come as Lob objects
+        // so that OCILobRead2 is used instead of the broken OCI prefetch path.
+        const lobResolver = new stream_1.Transform({
+            objectMode: true,
+            transform(row, _enc, cb) {
+                const lobIdxs = row.reduce((acc, val, i) => (val && typeof val.getData === 'function') ? [...acc, i] : acc, []);
+                if (lobIdxs.length === 0) {
+                    cb(null, row);
+                    return;
+                }
+                Promise.all(lobIdxs.map(i => row[i].getData()
+                    .then((d) => { row[i] = d; })
+                    .catch((e) => { row[i] = '[LOB read error: ' + (e?.message || 'unknown') + ']'; })))
+                    .then(() => cb(null, row))
+                    .catch((err) => cb(err));
+            }
+        });
+        // Pipe oracle stream → lob resolver; forward errors; propagate destroy
+        stream.pipe(lobResolver);
+        stream.on('error', (err) => { try {
+            lobResolver.destroy(err);
+        }
+        catch { } });
+        const origDestroy = lobResolver.destroy.bind(lobResolver);
+        lobResolver.destroy = function (err) {
+            try {
+                stream.destroy();
+            }
+            catch { }
+            return origDestroy(err);
+        };
+        return lobResolver;
     }
     /**
      * Stream query results in batches for export.
@@ -1042,6 +1170,11 @@ class OracleService {
             [oracledb_1.default.DB_TYPE_INTERVAL_YM]: 'INTERVAL YEAR TO MONTH',
             [oracledb_1.default.DB_TYPE_JSON]: 'JSON',
         };
+        // XMLType: constant may not be in all oracledb type definitions
+        const xmlTypeId = oracledb_1.default.DB_TYPE_XMLTYPE;
+        if (xmlTypeId !== undefined) {
+            typeMap[xmlTypeId] = 'XMLTYPE';
+        }
         return typeMap[dbType] || `TYPE_${dbType}`;
     }
     constraintTypeName(type) {

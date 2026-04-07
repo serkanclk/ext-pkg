@@ -518,8 +518,15 @@ class ObjectViewerPanel {
         .number-value { text-align: right; font-variant-numeric: tabular-nums; }
         .row-number { color: var(--vscode-descriptionForeground); text-align: right; border-right: 2px solid var(--vscode-editorWidget-border); background: var(--vscode-editorWidget-background); position: sticky; left: 0; z-index: 5; min-width: 35px; padding-right: 8px; font-size: 11px; }
         
-        th.sort-asc::after { content: ' ▲'; opacity: 0.7; }
-        th.sort-desc::after { content: ' ▼'; opacity: 0.7; }
+        th.sort-asc::after { content: ' \u25b2'; opacity: 0.7; }
+        th.sort-desc::after { content: ' \u25bc'; opacity: 0.7; }
+
+        th .col-label {
+            cursor: pointer; display: inline-block;
+            max-width: calc(100% - 8px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        th .col-label.sort-asc::after { content: ' \u25b2'; opacity: 0.7; }
+        th .col-label.sort-desc::after { content: ' \u25bc'; opacity: 0.7; }
 
         /* ── Column Resize ── */
         th { position: relative; }
@@ -528,8 +535,6 @@ class ObjectViewerPanel {
             cursor: col-resize; z-index: 20; background: transparent;
         }
         th .col-resizer:hover, th .col-resizer.active { background: var(--primary-color); }
-
-        /* ── Context Menu ── */
         .ctx-menu {
             position: fixed; z-index: 1000; min-width: 180px;
             background: var(--vscode-menu-background, var(--header-bg));
@@ -1102,11 +1107,16 @@ class ObjectViewerPanel {
             if (dataColumns[resizeColIdx]) dataColumns[resizeColIdx].width = newW;
         }
         function stopColResize() {
+            const wasResizing = resizeCol !== null;
             document.querySelectorAll('.col-resizer.active').forEach(r => r.classList.remove('active'));
             resizeCol = null;
             resizeColIdx = -1;
             document.removeEventListener('mousemove', doColResize);
             document.removeEventListener('mouseup', stopColResize);
+            if (wasResizing) {
+                // Consume the click event that fires after mouseup to prevent unintended sort
+                document.addEventListener('click', ev => ev.stopImmediatePropagation(), { capture: true, once: true });
+            }
         }
         window.initColResize = initColResize;
 
@@ -1120,7 +1130,7 @@ class ObjectViewerPanel {
             thead.innerHTML = '<tr><th class="row-number">#</th>' + dataColumns.map((col, i) => {
                 const s = sortColIdx === i ? (sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
                 const styleStr = col.width ? (' style="width:'+col.width+'px;min-width:'+col.width+'px;max-width:'+col.width+'px"') : '';
-                return '<th class="' + s + '" onclick="sortDataBy(' + i + ')" title="' + col.name + ' (' + col.dbType + ')"' + styleStr + '>' + col.name + '<div class="col-resizer" onmousedown="initColResize(event,' + i + ')"></div></th>';
+                return '<th title="' + col.name + ' (' + col.dbType + ')"' + styleStr + '><span class="col-label ' + s + '" onclick="sortDataBy(' + i + ')">' + col.name + '</span><div class="col-resizer" onmousedown="initColResize(event,' + i + ')"></div></th>';
             }).join('') + '</tr>';
 
             // Body

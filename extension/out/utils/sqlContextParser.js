@@ -205,6 +205,10 @@ class SqlContextParser {
         if (/\bUPDATE\s*$/i.test(upper)) {
             return 'from_table';
         }
+        // DESCRIBE context (object name expected)
+        if (/\bDESCRIBE\s*$/i.test(upper)) {
+            return 'from_table';
+        }
         // SELECT context (columns expected)
         if (/\bSELECT\s+(DISTINCT\s+)?$/i.test(upper) ||
             this.isInSelectClause(upper)) {
@@ -276,7 +280,7 @@ class SqlContextParser {
         'MINUS', 'DISTINCT', 'INTO', 'VALUES', 'SET', 'WITH', 'CASE',
         'WHEN', 'THEN', 'ELSE', 'END', 'INSERT', 'UPDATE', 'DELETE',
         'CREATE', 'ALTER', 'DROP', 'TABLE', 'VIEW', 'INDEX', 'BEGIN',
-        'DECLARE', 'EXCEPTION', 'RETURN', 'IF', 'LOOP', 'FOR',
+        'DECLARE', 'EXCEPTION', 'RETURN', 'IF', 'LOOP', 'FOR', 'DESCRIBE',
     ]);
     static isKeyword(word) {
         return this.KEYWORDS.has(word.toUpperCase());

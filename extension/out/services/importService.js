@@ -247,11 +247,18 @@ class ImportService {
         }
         const batchSize = 500;
         let inserted = 0;
+        // Numeric column types that need JS number binding (not string)
+        // to avoid ORA-01722 when NLS decimal separator is ',' but data uses '.'
+        const NUMERIC_TYPES = new Set(['NUMBER', 'FLOAT', 'INTEGER', 'INT', 'BINARY_FLOAT', 'BINARY_DOUBLE']);
         for (let i = 0; i < rows.length; i += batchSize) {
-            const batch = rows.slice(i, i + batchSize).map(row => colIndices.map(idx => {
+            const batch = rows.slice(i, i + batchSize).map(row => colIndices.map((idx, colPos) => {
                 const val = idx >= 0 ? row[idx] : null;
                 if (val === null || val === undefined || val === '')
                     return null;
+                if (NUMERIC_TYPES.has(columns[colPos].dataType)) {
+                    const n = parseFloat(String(val));
+                    return isNaN(n) ? null : n;
+                }
                 return val;
             }));
             await oracleService.executeMany(sql, batch, { connectionName, autoCommit: true });

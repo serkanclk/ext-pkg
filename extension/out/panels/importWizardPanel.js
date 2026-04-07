@@ -766,10 +766,14 @@ function initColumnDefs() {
                 const v = row[colIdx];
                 return v === null || v === '' || !isNaN(Number(v));
             });
+            const hasDecimal = isNumeric && parsedRows.some(row => {
+                const v = row[colIdx];
+                return v !== null && v !== '' && String(v).includes('.');
+            });
             columnDefs[col] = {
                 sourceName: col,
                 name: col,
-                dataType: isNumeric ? 'NUMBER' : 'VARCHAR2',
+                dataType: isNumeric ? (hasDecimal ? 'FLOAT' : 'NUMBER') : 'VARCHAR2',
                 size: isNumeric ? 38 : Math.max(maxLen * 2, 100),
                 defaultValue: '',
                 comment: '',

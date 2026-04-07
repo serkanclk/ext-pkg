@@ -36,6 +36,7 @@ Visual Studio Code için **güvenlik, denetim uyumluluğu ve thick-mode performa
 ### 📊 Sonuç Izgarası (Results Grid)
 - Sıralama, filtreleme ve "Daha Fazla Yükle" (Load More) sayfalama özelliklerine sahip etkileşimli ızgara.
 - Satır sayısını ve işlem yürütme süresini takip eden Durum Çubuğu.
+- **CLOB/BLOB Desteği**: `CLOB` değerleri çift tıklanabilir modal ile, `BLOB` değerleri HEX formatında görüntülenir. Büyük LOB değerleri için boyut uyarısı ve Export yönlendirmesi gösterilir.
 
 ## 🛠️ Gereksinimler
 
@@ -50,16 +51,33 @@ Denetim sistemi, maksimum güvenlik için koda gömülmüştür. Her veri aktar�
 - **VPN/Uzak bağlantılarda**: İndirme sunucusu dosya boyutuna göre dinamik zaman aşımı kullanır (60s + 50MB başına 60s). Çok büyük dosyalar için dosyayı sunucudan doğrudan kopyalamayı tercih edebilirsiniz.
 - Export işlemi, `oracledb.queryStream()` kullanarak Oracle'dan satır satır veri çeker ve doğrudan diske yazar. RAM'de birikim yapılmaz.
 
-## 📦 Dağıtım Dosyaları (V2.6.8)
+## 📦 Dağıtım Dosyaları (V2.6.10)
 
 | Sürüm | Linux (x64) | Mac (ARM64) |
 | :--- | :--- | :--- |
-| **Full** | `ing-sql-linux-x64-2.6.8.vsix` | `ing-sql-darwin-arm64-2.6.8.vsix` |
-| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.6.8.vsix` | `ing-sql-intl-darwin-arm64-2.6.8.vsix` |
-| **Restricted** | `ing-sql-restricted-linux-x64-2.6.8.vsix` | `ing-sql-restricted-darwin-arm64-2.6.8.vsix` |
-| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.6.8.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.6.8.vsix` |
+| **Full** | `ing-sql-linux-x64-2.6.10.vsix` | `ing-sql-darwin-arm64-2.6.10.vsix` |
+| **Full + Intellisense** | `ing-sql-intl-linux-x64-2.6.10.vsix` | `ing-sql-intl-darwin-arm64-2.6.10.vsix` |
+| **Restricted** | `ing-sql-restricted-linux-x64-2.6.10.vsix` | `ing-sql-restricted-darwin-arm64-2.6.10.vsix` |
+| **Restricted + Intl** | `ing-sql-restricted-intl-linux-x64-2.6.10.vsix` | `ing-sql-restricted-intl-darwin-arm64-2.6.10.vsix` |
 
 ## 📋 Sürüm Notları (Changelog)
+
+### v2.6.10 — CLOB/BLOB Desteği & XMLType CLOB Düzeltmesi
+- **CLOB Görüntüleme (Query Results Paneli)**: `CLOB` ve `NCLOB` sütunların değerleri artık sonuç ızgarasında `[CLOB — X KB]` olarak gösterilir. Hücreye çift tıklandığında tüm metin içeriği açılan bir modal pencerede görüntülenir ve kopyalanabilir.
+- **BLOB Görüntüleme**: `BLOB` sütunları `[BLOB — X KB]` etiketiyle gösterilir; 512 KB altındaki değerlerde hücreye çift tıklanarak HEX içerik panoya kopyalanabilir.
+- **Boyut Sınırı Güvenliği**: 1 MB'ı aşan CLOB ve 512 KB'ı aşan BLOB değerleri kısaltma yapılmadan `[CLOB — X KB, görüntülemek için export ediniz]` uyarısıyla işaretlenir; tam veri için Export akışı kullanılması önerilir.
+- **XMLType Desteği**: `XMLTYPE()`, `XMLELEMENT`, `XMLFOREST`, `XMLAGG`, `XMLQUERY`, `XMLROOT`, `XMLATTRIBUTES`, `XMLEXISTS`, `XMLTABLE` gibi tüm temel XML fonksiyonları artık sonuç ızgarasında doğru gösterilir. Kök neden: `DB_TYPE_XMLTYPE` kolonları `fetchTypeHandler`'a `{ type }` belirtildiğinde `NJS-119` hatasıyla çöküyordu. Düzeltme: `converter`-only yaklaşımla tip dönüşümü atlanırken driver'ın asenkron Promise'i `resolveLobs()` içinde await edilerek XML string elde edildi. `CLOB` veya `NCLOB` sütunlar da aynı `resolveLobs()` akışından geçer. Kısıtlama: `XMLATTRIBUTES(... AS "xmlns:xsi")` ve `XMLNAMESPACES` içeren sorgularda OCI XmlSave boş string üretiyor; bu sorgular için SQL'de `XMLSERIALIZE(... AS CLOB)` veya `.getClobVal()` kullanılmalıdır.
+
+### v2.6.9 — SQL*Plus Meta-Komutlar, &var Substitution, Import & Grid Düzeltmeleri
+- **DESCRIBE Sonuçları Query Results Panelinde**: `DESCRIBE TABLO_ADI` artık Object Viewer'ı açmak yerine `USER_TAB_COLUMNS` / `ALL_TAB_COLUMNS` tablosunu sorgulayarak sütun adı, veri tipi ve nullable bilgisini doğrudan **Query Results** panelinde gösteriyor. Şema prefix'i destekleniyor (`DESCRIBE SCHEMA.TABLO`).
+- **Sıralama Sadece Başlık Yazısına Tıklandığında**: Sütun başlığındaki resize şeridine tıklanınca sort tetikleniyordu. Kolon etiketleri artık `<span class="col-label">` içine alındı; `onclick` ve sort CSS class yalnızca span'e uygulanıyor, resize şeridine dokunulduğunda sort tetiklenmiyor. Hem Query Result hem Object Viewer panellerinde düzeltildi.
+- **Import FLOAT/NUMBER ORA-01722 Düzeltmesi**: CSV/XLSX'teki `902.22` gibi ondalık değerler (`NUMBER` veya `FLOAT` kolonlarına) string olarak bind ediliyordu; NLS ondalık ayırıcısı `,` olan ortamlarda Oracle `ORA-01722: invalid number` hatası fırlatıyordu. Import sihirbazı ondalık nokta içeren sütunları otomatik `FLOAT` olarak algılıyor; `insertDataFromDefs` ise numeric tip kolonlara `parseFloat()` ile JavaScript number bağlıyor.
+- **DESCRIBE Oracle'a Gönderiliyordu (ORA-00900) Düzeltmesi**: `DESCRIBE TABLO_ADI` veya `DESCRIBE TABLO_ADI;`, içinde bulunduğu `SELECT` bloğuyla birleştirilip Oracle'a gönderiliyordu. `DESCRIBE` bir SQL*Plus istemci komutu olduğundan Oracle engine'e ulaşınca `ORA-00900` hatası fırlatılıyordu. Hem `splitStatements` döngüsü hem de `executeSql` güncellendi: `DESCRIBE` artık önceki SELECT'ten ayrılarak istemci tarafında işleniyor.
+- **DEFINE/UNDEFINE Karışık Blokta Çalışmıyor (ORA-00900) Düzeltmesi**: `DEFINE KATEGORI='ELEKTRONIK'` gibi satırlar öncesinde yorum veya başka satırlar varsa, `splitStatements`'taki kontrol tüm birikmiş buffer'ı tarıyordu; `^DEFINE` regex'i tüm buffer başına baktığından eşleşemeyip statement SELECT ile birleşiyordu. Artık döngü yalnızca `current` içindeki son satıra bakarak DEFINE/UNDEFINE/DESCRIBE satırını önceki statement'tan ayırıp bağımsız olarak push ediyor.
+- **DEFINE Semicolonsuz Çalışmıyor (ORA-00900) Düzeltmesi**: `DEFINE TARIH = '20.03.2025'` satırının sonunda `;` bulunmadığında statement splitter bu satırı bir sonraki `SELECT` ile birleştiriyordu. Newline'ın DEFINE/UNDEFINE için statement sonlandırıcı kabul edilmesiyle düzeltildi.
+- **String Literali İçindeki `&var` Substitution Çalışmıyor (ORA-01858) Düzeltmesi**: `TO_DATE('&TARIH', 'DD.MM.YYYY')` ve `'&TARIH'` gibi kullanımlarda `&TARIH` referansı string literal içinde kaldığı için yerine konulmuyordu; Oracle `ORA-01858` hatasını fırlatıyordu. Oracle SQL*Plus gibi substitution artık string literal içinde dahil olmak üzere tüm metin üzerinde uygulanıyor.
+- **Sütun Genişletme Sonrası İstenmeyen Sıralama Düzeltmesi**: Sütun genişliği ayarlandıktan sonra sütun başlığına yapılan sürükle-bırak işlemi `click` olayı olarak algılanıp istemeden sort tetikleniyordu. `mouseup` sonrasında yayılan `click` olayı artık capture fazında tüketilerek engellendi. Hem Query Result hem de Object Viewer panellerinde düzeltildi.
+- **DESCRIBE Anahtar Kelimesi Dil Desteği**: `DESCRIBE` komutu sözdizimi vurgulama, otomatik tamamlama ve bağlam algılama tarafından tanınıyor; `DESCRIBE` yazıldıktan sonra tablo/nesne adı önerileri sunuluyor.
 
 ### v2.6.8 — SQL Çalışma Sayfası Daraltma & Akıllı Yorum Okuma
 - **Dosya Daraltma/Genişletme (Folding)**: Sol kenar boşluğunda (gutter) SQL kodlarını içe katlama özelliği (*folding*) eklendi. Tüm `SELECT, WITH, INSERT` vb. bloklarınızı, yorum (*block comment*) alanlarını veya alt parantezleri pratik bir biçimde genişletip daraltabilirsiniz.

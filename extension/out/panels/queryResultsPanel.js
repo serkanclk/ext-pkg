@@ -170,10 +170,39 @@ class QueryResultsPanel {
         // Gather active worksheet's queries
         const activeTabs = [];
         const activeWs = this.activeDocUri ? this.worksheets.get(this.activeDocUri) : undefined;
+        const MAX_CLOB_LEN = 1 * 1024 * 1024; // 1 MB
+        const MAX_BLOB_LEN = 512 * 1024; // 512 KB
         if (activeWs) {
             activeWs.results.forEach((result, tabIndex) => {
                 const stmtPreview = result.statement.replace(/\s+/g, ' ').substring(0, 50);
-                const formattedRows = result.rows.map(row => row.map(val => Buffer.isBuffer(val) ? val.toString('hex').toUpperCase() : val));
+                const formattedRows = result.rows.map(row => row.map((val, ci) => {
+                    if (val === null || val === undefined) {
+                        return val;
+                    }
+                    const dbType = result.columns[ci]?.dbType;
+                    // Treat CLOB, NCLOB, and XMLTYPE (e.g. XMLSERIALIZE AS CLOB) identically
+                    if (dbType === 'CLOB' || dbType === 'NCLOB' || dbType === 'XMLTYPE') {
+                        const s = typeof val === 'string' ? val : String(val);
+                        const sizeKb = Math.round(s.length / 1024);
+                        if (s.length > MAX_CLOB_LEN) {
+                            return { __lob: 'CLOB', truncated: true, size: s.length, sizeKb };
+                        }
+                        return { __lob: 'CLOB', truncated: false, value: s, sizeKb };
+                    }
+                    if (Buffer.isBuffer(val)) {
+                        const sizeKb = Math.round(val.length / 1024);
+                        if (val.length > MAX_BLOB_LEN) {
+                            return { __lob: 'BLOB', truncated: true, size: val.length, sizeKb };
+                        }
+                        return { __lob: 'BLOB', truncated: false, hex: val.toString('hex').toUpperCase(), sizeKb };
+                    }
+                    // Safety net: any remaining non-primitive object that would break
+                    // JSON serialization in postMessage (e.g. unreolved Lob/XMLType)
+                    if (val !== null && typeof val === 'object') {
+                        return String(val);
+                    }
+                    return val;
+                }));
                 activeTabs.push({
                     tabIndex,
                     label: activeWs.tabLabels[tabIndex],
@@ -274,7 +303,6 @@ class QueryResultsPanel {
                     const batchSize = config.get('resultGrid.maxRows', 100);
                     const oracleService = oracleService_1.OracleService.getInstance();
                     const { rows, hasMore } = await oracleService.fetchMoreRows(res.cursorId, batchSize);
-                    const formattedRows = rows.map(row => row.map(val => Buffer.isBuffer(val) ? val.toString('hex').toUpperCase() : val));
                     res.rows = res.rows.concat(rows);
                     res.hasMore = hasMore;
                     res.rowCount = res.rows.length;
@@ -463,6 +491,9 @@ class QueryResultsPanel {
         tr.selected td { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
         .null-value { color: var(--vscode-descriptionForeground); font-style: italic; }
         .number-value { text-align: right; font-variant-numeric: tabular-nums; }
+        .lob-value { color: var(--vscode-textLink-foreground, #4dabf7); cursor: pointer; font-style: italic; }
+        .lob-value:hover { text-decoration: underline; }
+        .lob-truncated { color: var(--vscode-editorWarning-foreground, #cca700); font-style: italic; cursor: help; }
         .row-number {
             color: var(--vscode-descriptionForeground); text-align: right;
             border-right: 2px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.2));
@@ -470,8 +501,13 @@ class QueryResultsPanel {
             position: sticky; left: 0; z-index: 5;
             min-width: 30px; padding-right: 6px; font-size: 11px;
         }
-        th.sort-asc::after { content: ' ▲'; opacity: 0.7; }
-        th.sort-desc::after { content: ' ▼'; opacity: 0.7; }
+
+        th .col-label {
+            cursor: pointer; display: inline-block;
+            max-width: calc(100% - 8px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        th .col-label.sort-asc::after { content: ' \u25b2'; opacity: 0.7; }
+        th .col-label.sort-desc::after { content: ' \u25bc'; opacity: 0.7; }
 
         /* ── Column Resize ── */
         th { position: relative; }
@@ -526,6 +562,15 @@ class QueryResultsPanel {
         }
         .modal-box button:hover { opacity: 0.9; }
         .modal-box button.secondary { background: transparent; color: var(--fg); }
+
+        /* ── LOB Viewer Modal ── */
+        .lob-modal-box { max-width: 80vw; width: 700px; max-height: 80vh; display: flex; flex-direction: column; text-align: left; }
+        .lob-modal-box .lob-content {
+            flex: 1; overflow: auto; white-space: pre-wrap; word-break: break-all;
+            font-family: var(--vscode-editor-font-family, monospace); font-size: 12px;
+            border: 1px solid var(--border); padding: 8px; margin-bottom: 14px;
+            max-height: 55vh; background: var(--vscode-editor-background);
+        }
 
         /* ── Status ── */
         .status-bar {
@@ -583,6 +628,17 @@ class QueryResultsPanel {
             </div>
         </div>
     </div>
+    <!-- LOB Viewer Modal -->
+    <div class="modal-overlay" id="lobModal" onclick="closeLobModal(event)">
+        <div class="modal-box lob-modal-box" onclick="event.stopPropagation()">
+            <h3 id="lobModalTitle">CLOB Content</h3>
+            <pre class="lob-content" id="lobContent"></pre>
+            <div class="modal-actions">
+                ${buildConfig_1.BUILD_CONFIG.isRestricted ? '' : '<button class="secondary" onclick="copyLobContent()">Copy</button>'}
+                <button onclick="document.getElementById(\'lobModal\').classList.remove(\'show\')">Close</button>
+            </div>
+        </div>
+    </div>
     <div class="status-bar">
         <span id="statusRowCount"></span>
         <span id="statusExecTime"></span>
@@ -609,6 +665,20 @@ class QueryResultsPanel {
         function postMsg(m) { vscode.postMessage(m); }
         function exportCurrent() { postMsg({type:'export',tabIndex:selectedTabIndex}); }
         function loadMore() { if (selectedTabIndex>=0) postMsg({type:'loadMore',tabIndex:selectedTabIndex}); }
+
+        function showLobModal(content) {
+            document.getElementById('lobContent').textContent = content;
+            document.getElementById('lobModal').classList.add('show');
+        }
+        function closeLobModal(e) {
+            if (!e || e.target === document.getElementById('lobModal')) {
+                document.getElementById('lobModal').classList.remove('show');
+            }
+        }
+        function copyLobContent() {
+            const content = document.getElementById('lobContent').textContent || '';
+            postMsg({type:'copyCell', value: content});
+        }
 
         // Interactions
         function switchWorksheet(uri) { postMsg({type:'switchWorksheet', docUri: uri}); }
@@ -729,11 +799,16 @@ class QueryResultsPanel {
             activeTabs[selectedTabIndex].columns[resizeColIdx].width = newW;
         }
         function stopColResize(e) {
+            const wasResizing = resizeCol !== null;
             document.querySelectorAll('.col-resizer.active').forEach(r => r.classList.remove('active'));
             resizeCol = null;
             resizeColIdx = -1;
             document.removeEventListener('mousemove', doColResize);
             document.removeEventListener('mouseup', stopColResize);
+            if (wasResizing) {
+                // Consume the click event that fires after mouseup to prevent unintended sort
+                document.addEventListener('click', ev => ev.stopImmediatePropagation(), { capture: true, once: true });
+            }
         }
 
         // ── Date sort helper ──
@@ -785,7 +860,7 @@ class QueryResultsPanel {
             t.columns.map((col, i) => {
                 const sc = t.sortColumn===i ? (t.sortDir==='asc'?'sort-asc':'sort-desc') : '';
                 const styleStr = col.width ? (' style="width:'+col.width+'px;min-width:'+col.width+'px;max-width:'+col.width+'px"') : '';
-                return '<th class="'+sc+'" onclick="sortBy('+i+')" title="'+col.name+' ('+col.dbType+')"'+styleStr+'>'+col.name+'<div class="col-resizer" onmousedown="initColResize(event,'+i+')"></div></th>';
+                return '<th title="'+col.name+' ('+col.dbType+')"'+styleStr+'><span class="col-label '+sc+'" onclick="sortBy('+i+')">'+col.name+'</span><div class="col-resizer" onmousedown="initColResize(event,'+i+')"></div></th>';
             }).join('') + '</tr>';
                 
             const numTypes = ['NUMBER','BINARY_FLOAT','BINARY_DOUBLE','FLOAT','INTEGER','INT'];
@@ -798,9 +873,27 @@ class QueryResultsPanel {
                 for (let c = 0; c < t.columns.length; c++) {
                     const td = document.createElement('td');
                     const val = rows[r][c];
-                    if (val===null||val===undefined) { td.textContent=NULL_DISPLAY; td.className='null-value'; }
-                    else { td.textContent=String(val); if (numTypes.includes(t.columns[c].dbType)) td.className='number-value'; }
-                    td.ondblclick = function() { if (!${buildConfig_1.BUILD_CONFIG.isRestricted}) postMsg({type:'copyCell',value:String(val??'')}); };
+                    if (val===null||val===undefined) {
+                        td.textContent=NULL_DISPLAY; td.className='null-value';
+                        td.ondblclick = function() { if (!${buildConfig_1.BUILD_CONFIG.isRestricted}) postMsg({type:'copyCell',value:''}); };
+                    } else if (val && typeof val==='object' && val.__lob) {
+                        const lobType = val.__lob;
+                        const sizeKb = val.sizeKb || 0;
+                        if (val.truncated) {
+                            td.innerHTML = '<span class="lob-truncated" title="'+lobType+' değeri '+sizeKb+' KB boyutunda (limit aşıldı). Tüm veriyi görmek için Export kullanın.">['+lobType+' \u2014 '+sizeKb+' KB, görüntülemek için export ediniz]</span>';
+                            td.ondblclick = function() { if (!${buildConfig_1.BUILD_CONFIG.isRestricted}) postMsg({type:'copyCell',value:'['+lobType+' \u2014 '+sizeKb+' KB, truncated]'}); };
+                        } else if (lobType==='CLOB') {
+                            td.innerHTML = '<span class="lob-value" title="Çift tıkla: içeriği görüntüle/kopyala">[CLOB \u2014 '+sizeKb+' KB]</span>';
+                            td.ondblclick = function() { showLobModal(val.value||''); if (!${buildConfig_1.BUILD_CONFIG.isRestricted}) postMsg({type:'copyCell',value:val.value||''}); };
+                        } else {
+                            td.innerHTML = '<span class="lob-value">[BLOB \u2014 '+sizeKb+' KB]</span>';
+                            td.ondblclick = function() { if (!${buildConfig_1.BUILD_CONFIG.isRestricted}) postMsg({type:'copyCell',value:val.hex||''}); };
+                        }
+                    } else {
+                        td.textContent=String(val);
+                        if (numTypes.includes(t.columns[c].dbType)) td.className='number-value';
+                        td.ondblclick = function() { if (!${buildConfig_1.BUILD_CONFIG.isRestricted}) postMsg({type:'copyCell',value:String(val??'')}); };
+                    }
                     tr.appendChild(td);
                 }
                 frag.appendChild(tr);

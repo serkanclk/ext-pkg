@@ -477,6 +477,42 @@ class SqlWorksheetCommands {
             return;
         }
         try {
+            // ── Handle DESCRIBE — runs USER_TAB_COLUMNS query, shows result in Query Results panel ──
+            const describeMatch = sql.match(/^DESCRIBE\s+([a-zA-Z_$#][a-zA-Z0-9_$#.]*)\s*$/i);
+            if (describeMatch) {
+                const objectName = describeMatch[1].toUpperCase();
+                const parts = objectName.split('.');
+                const tblName = parts.length > 1 ? parts[1] : parts[0];
+                const ownerName = parts.length > 1 ? parts[0] : null;
+                // Build a TYPE_FULL display similar to SQL*Plus DESCRIBE output
+                const typeExpr = `CASE
+                    WHEN DATA_TYPE IN ('VARCHAR2','NVARCHAR2','CHAR','NCHAR') THEN DATA_TYPE||'('||CHAR_LENGTH||')'
+                    WHEN DATA_PRECISION IS NOT NULL AND DATA_SCALE IS NOT NULL AND DATA_SCALE > 0 THEN DATA_TYPE||'('||DATA_PRECISION||','||DATA_SCALE||')'
+                    WHEN DATA_PRECISION IS NOT NULL THEN DATA_TYPE||'('||DATA_PRECISION||')'
+                    ELSE DATA_TYPE
+                END`;
+                let descSql;
+                let descBinds;
+                if (ownerName) {
+                    descSql = `SELECT COLUMN_NAME, ${typeExpr} AS DATA_TYPE, NULLABLE FROM ALL_TAB_COLUMNS WHERE TABLE_NAME = :tableName AND OWNER = :ownerName ORDER BY COLUMN_ID`;
+                    descBinds = { tableName: tblName, ownerName };
+                }
+                else {
+                    descSql = `SELECT COLUMN_NAME, ${typeExpr} AS DATA_TYPE, NULLABLE FROM USER_TAB_COLUMNS WHERE TABLE_NAME = :tableName ORDER BY COLUMN_ID`;
+                    descBinds = { tableName: tblName };
+                }
+                const result = await this.oracleService.executeCursor(descSql, descBinds, { connection: sessionConn });
+                if (docUri) {
+                    const descDocName = vscode.window.activeTextEditor?.document.fileName.split(/[\\/]/).pop() || 'Worksheet';
+                    const resultsPanel = queryResultsPanel_1.QueryResultsPanel.getInstance();
+                    if (resultsPanel) {
+                        resultsPanel.addResult(docUri, descDocName, result);
+                    }
+                }
+                this.historyProvider.addEntry(`DESCRIBE ${objectName}`, result.executionTime, result.rowCount);
+                this.statusBar.showSuccess(result.rowCount, result.executionTime);
+                return;
+            }
             if (isQuery) {
                 const result = await this.oracleService.executeCursor(sql, binds, {
                     connection: sessionConn
@@ -515,7 +551,7 @@ class SqlWorksheetCommands {
             if (editor?.document) {
                 this.diagnosticsProvider.reportExecutionError(editor.document, startOffset, err);
             }
-            vscode.window.showErrorMessage(`SQL Error: ${err.message}`);
+            vscode.window.showErrorMessage(`SQL Error: ${err.message || err.errorNum || String(err)}`);
         }
     }
     /**
@@ -523,22 +559,13 @@ class SqlWorksheetCommands {
      * Skips substitution inside single-quoted string literals.
      */
     applySubstitutionVars(sql) {
-        // Split into quoted-string tokens and non-string tokens
-        const parts = sql.split(/('(?:[^']|'')*')/);
-        for (let i = 0; i < parts.length; i++) {
-            // Odd indices are quoted strings — skip them
-            if (i % 2 === 1)
-                continue;
-            // Replace &&var and &var (longer prefix first)
-            parts[i] = parts[i].replace(/&&?([a-zA-Z_][a-zA-Z0-9_]*)/g, (_match, varName) => {
-                const value = this.defineVars.get(varName.toUpperCase());
-                if (value !== undefined) {
-                    return value;
-                }
-                return _match; // leave unresolved vars as-is
-            });
-        }
-        return parts.join('');
+        // Oracle SQL*Plus performs &var substitution as a pure text replacement BEFORE SQL parsing,
+        // including inside string literals (e.g. TO_DATE('&TARIH', 'DD.MM.YYYY') or '&TARIH').
+        // Therefore we must substitute in ALL parts, not just the non-string parts.
+        return sql.replace(/&&?([a-zA-Z_][a-zA-Z0-9_]*)/g, (_match, varName) => {
+            const value = this.defineVars.get(varName.toUpperCase());
+            return value !== undefined ? value : _match;
+        });
     }
     getStatementAtCursor(editor) {
         // If there's a selection, use it
@@ -579,15 +606,17 @@ class SqlWorksheetCommands {
         let inLineComment = false;
         let parenDepth = 0;
         let inPlSqlBlock = false;
+        const resetPlSql = () => { inPlSqlBlock = false; };
         for (let i = 0; i < text.length; i++) {
             const char = text[i];
-            const nextChar = text[i + 1];
-            // Handle comments
+            const nextChar = text[i + 1] ?? '';
+            // ── Comment handling ──
             if (!inString && !inBlockComment && char === '-' && nextChar === '-') {
                 inLineComment = true;
             }
             if (inLineComment && char === '\n') {
                 inLineComment = false;
+                // fall through — the '\n' itself must still be processed below
             }
             if (!inString && !inLineComment && char === '/' && nextChar === '*') {
                 inBlockComment = true;
@@ -598,30 +627,60 @@ class SqlWorksheetCommands {
                 i++;
                 continue;
             }
-            // Handle strings
+            // ── String handling ──
             if (!inBlockComment && !inLineComment && char === "'") {
                 inString = !inString;
             }
+            // Inside strings/comments: accumulate verbatim, no further processing
             if (inString || inBlockComment || inLineComment) {
                 current += char;
                 continue;
             }
-            // Track parentheses
+            // ── Newline ──
+            if (char === '\n') {
+                // DEFINE/UNDEFINE/DESCRIBE terminate at newline (no ; needed).
+                const lastNL = current.lastIndexOf('\n');
+                const lastLine = current.substring(lastNL + 1).replace(/--.*$/, '').trim();
+                if (lastLine && /^(DEFINE|UNDEFINE|DESCRIBE)\b/i.test(lastLine)) {
+                    const before = lastNL >= 0 ? current.substring(0, lastNL).trim() : '';
+                    if (before) {
+                        const bc = before.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+                        if (bc) {
+                            statements.push(before);
+                        }
+                    }
+                    statements.push(lastLine);
+                    current = '';
+                    resetPlSql();
+                    continue;
+                }
+                // For .pls files: detect CREATE OR REPLACE at statement start so that
+                // variable-declaration semicolons do NOT split the DDL block.
+                if (!inPlSqlBlock && parenDepth === 0) {
+                    const cs = current.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trimStart().toUpperCase();
+                    if (/^CREATE\s+(OR\s+REPLACE\s+)?(PROCEDURE|FUNCTION|TRIGGER|PACKAGE|TYPE)\b/.test(cs)) {
+                        inPlSqlBlock = true;
+                    }
+                }
+            }
+            // ── Paren depth ──
             if (char === '(') {
                 parenDepth++;
             }
             if (char === ')') {
                 parenDepth--;
             }
-            // Detect PL/SQL blocks
-            const upperCurrent = current.toUpperCase().trim();
-            if (/\b(BEGIN|DECLARE)\s*$/i.test(upperCurrent)) {
-                inPlSqlBlock = true;
+            // ── PL/SQL keyword detection ──
+            if (parenDepth === 0) {
+                // BEGIN/DECLARE sets inPlSqlBlock; END; terminates it
+                const upperCurrent = current.toUpperCase().trim();
+                if (/\b(BEGIN|DECLARE)\s*$/i.test(upperCurrent)) {
+                    inPlSqlBlock = true;
+                }
             }
-            // Statement delimiter
+            // ── Semicolon delimiter ──
             if (char === ';' && parenDepth === 0) {
                 if (inPlSqlBlock) {
-                    // Check if this is END;
                     if (/\bEND\s*$/i.test(current.trim())) {
                         inPlSqlBlock = false;
                         current += char;
@@ -632,17 +691,33 @@ class SqlWorksheetCommands {
                     current += char;
                     continue;
                 }
+                // DESCRIBE check — shared by both modes
+                const lastNLs = current.lastIndexOf('\n');
+                const lastLineS = current.substring(lastNLs + 1).replace(/--.*$/, '').trim();
+                if (lastLineS && /^DESCRIBE\b/i.test(lastLineS)) {
+                    const beforeS = lastNLs >= 0 ? current.substring(0, lastNLs).trim() : '';
+                    if (beforeS) {
+                        const bcs = beforeS.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+                        if (bcs) {
+                            statements.push(beforeS);
+                        }
+                    }
+                    statements.push(lastLineS);
+                    current = '';
+                    continue;
+                }
                 statements.push(current.trim());
                 current = '';
                 continue;
             }
-            // / as delimiter (PL/SQL)
-            if (char === '/' && (i === 0 || text[i - 1] === '\n') && (nextChar === '\n' || nextChar === undefined || nextChar === '\r')) {
+            // ── Slash delimiter — SQL*Plus PL/SQL terminator (/ alone on a line) ──
+            if (char === '/' && (i === 0 || text[i - 1] === '\n') &&
+                (nextChar === '\n' || nextChar === '' || nextChar === '\r')) {
                 if (current.trim()) {
                     statements.push(current.trim());
                     current = '';
                 }
-                inPlSqlBlock = false;
+                resetPlSql();
                 continue;
             }
             current += char;
